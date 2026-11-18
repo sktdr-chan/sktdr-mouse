@@ -1,0 +1,153 @@
+{
+  "profileVersion": 1,
+  "id": "logitech-pro-x-wireless",
+
+  "_documentation": {
+    "about": "Logitech G PRO X Wireless（HID++ 2.0 / Lightspeed）固有のデバイス定義。HID++はCompx/MOJI/Swarmとは全く別の第4プロトコルファミリー。",
+    "protocolSource": "HID++ 2.0公開仕様とコミュニティ実装: Solaar (pwr-Solaar/Solaar, GPL) の lib/logitech_receiver/hidpp20_constants.py・settings_templates.py（機能ID・DPI/レートのファンクション番号・応答レイアウト）+ libratbag (src/hidpp20.c)。実機検証 2026-11-18。",
+    "additionalReferences": [
+      "https://github.com/Ad1FPS/Featherweight (MIT) — PRO X Superlight 2向け実装。ワイヤー形式（レポートID 0x11による20バイト長報送信・swId 0x0A・応答一致規則・HID++エラーフレーム処理）の確認源",
+      "https://github.com/Lken-cmd/SuperLightBattery — PRO X Superlight向けWindowsバッテリートレイ"
+    ],
+    "wireFormat": "usagePage 0xFF00 / usage 2 の20バイトコレクション。要求 [0x11, devIdx, featureIdx, (fn<<4)|swId, params…]、応答は devIdx+featureIdx+fnバイト一致（7/20バイト両方）。機能はプロファイルのfeature IDをROOT (0x0000 fn0) でインデックス解決してキャッシュ。エラーフレームは featureスロット 0xFF/0x8F + コード（2=引数不正を実測）。",
+    "verifiedOn": "G PRO X Wireless + Lightspeedレシーバー (0x046D:0xC547), 2026-11-18 — デバイス名「PRO X Wireless」、機能28個、バッテリー95%、DPI 800（100〜25600を検証・50刻みに自動スナップ）、レート 1ms（リスト1/2/4/8ms）、オンボードプロファイル format 1 × 4。書き込みはホストモード (0x8100 fn1 [2]) でのみ受理され、復帰 (fn1 [1]) を実測確認。",
+    "notes": "オンボードプロファイルモードでは書き込みがエラー2で拒否される。本ツールは書き込み前に自動でホストモードへ切替（statusSyncBeforeWrite）。設定はライブ適用され、マウスの電源再投入でオンボードプロファイルに戻る（G HUBのオンボード保存相当の永続化は未実装 — format 1 セクター書き込み+CRCが必要）。"
+  },
+
+  "meta": {
+    "name": "Logitech G PRO X Wireless",
+    "brand": "Logitech",
+    "models": ["G PRO X Wireless (Lightspeed)", "PRO X Wireless"],
+    "notes": "HID++ 2.0。DPI・レートはホストモードでライブ適用。オンボードプロファイル (format 1, 4枠) への保存は未対応。",
+    "connectionLabel": "ワイヤレス (Lightspeed)"
+  },
+
+  "usb": {
+    "vendorId": "0x046D",
+    "productIds": ["0xC547"],
+    "pidLabels": { "0xC547": "Lightspeed USB Receiver" },
+    "vendorUsagePageMin": "0xFF00",
+    "deviceIndex": 1,
+    "probeCommand": "probeRoot"
+  },
+
+  "transport": {
+    "type": "hidpp",
+    "reportId": 17,
+    "swId": "0x0A",
+    "minTimeoutMs": 1500,
+    "statusSyncBeforeWrite": "setHostMode",
+    "configImage": { "length": 0 }
+  },
+
+  "commands": {
+    "probeRoot": {
+      "feature": "0x0000", "function": 0, "params": [0, 1],
+      "_doc": "ROOT.GetFeature(FEATURE SET 0x0001) — ペアされたマウスの生存確認"
+    },
+    "battery": {
+      "feature": "0x1004", "function": 1,
+      "response": { "level": 4, "charging": 6 },
+      "_doc": "UNIFIED BATTERY GetStatus: [4]=残量%, [6]=状態 (0放電/1充電/2低速充電/3充電完了)"
+    },
+    "getDpi": {
+      "feature": "0x2201", "function": 2, "params": [0],
+      "response": { "dpi": 5, "default": 7 },
+      "_doc": "ADJUSTABLE DPI GetDpi(sensor0): [5..6]=DPI BE16, [7..8]=既定値"
+    },
+    "setDpi": {
+      "feature": "0x2201", "function": 3, "params": [0],
+      "_doc": "ADJUSTABLE DPI SetDpi(sensor0, DPI BE16) — 50刻みに自動スナップ (12345→12350を実測)"
+    },
+    "getReportRate": {
+      "feature": "0x8060", "function": 1,
+      "response": { "ms": 4 },
+      "_doc": "REPORT RATE GetReportRate: [4]=ミリ秒 (1/2/4/8)"
+    },
+    "setReportRate": {
+      "feature": "0x8060", "function": 2,
+      "_doc": "REPORT RATE SetReportRate(ms)"
+    },
+    "setHostMode": {
+      "feature": "0x8100", "function": 1, "params": [2],
+      "_doc": "ONBOARD PROFILES SetMode(2=HOST)。書き込み前に必須（ONBOARDモードだとエラー2）"
+    },
+    "backToOnboard": {
+      "feature": "0x8100", "function": 1,
+      "_doc": "ONBOARD PROFILES SetMode(1=ONBOARD) — アクションが data [1] を渡す"
+    }
+  },
+
+  "ui": {
+    "deviceInfo": [
+      { "key": "product", "label": "製品" },
+      { "key": "connection", "label": "接続方式" },
+      { "key": "battery", "label": "バッテリー" }
+    ],
+
+    "sections": [
+      {
+        "title": "DPI設定",
+        "settings": [
+          {
+            "key": "dpi",
+            "type": "slider",
+            "label": "DPI",
+            "min": 100,
+            "max": 25600,
+            "step": 50,
+            "read": { "command": "getDpi", "field": "dpi", "bytes": 2, "fallbackField": "default" },
+            "write": { "mode": "commandFrame", "command": "setDpi", "payload": [{ "value": "be16" }] },
+            "hint": "100〜25600（50刻み、端数は自動で50刻みに丸められます）。変更は即時適用されます。"
+          }
+        ]
+      },
+      {
+        "title": "ポーリングレート",
+        "settings": [
+          {
+            "key": "reportRate",
+            "type": "segmented",
+            "label": "ポーリングレート",
+            "unit": " Hz",
+            "read": {
+              "command": "getReportRate",
+              "field": "ms",
+              "codec": {
+                "type": "enum",
+                "values": [
+                  { "value": 1000, "code": 1 },
+                  { "value": 500, "code": 2 },
+                  { "value": 250, "code": 4 },
+                  { "value": 125, "code": 8 }
+                ]
+              }
+            },
+            "write": { "mode": "commandFrame", "command": "setReportRate", "payload": [{ "value": "enumCode" }] },
+            "options": [
+              { "value": 125, "label": "125" },
+              { "value": 250, "label": "250" },
+              { "value": 500, "label": "500" },
+              { "value": 1000, "label": "1000" }
+            ],
+            "hint": "本体は最大1000Hzです。"
+          }
+        ]
+      },
+      {
+        "title": "システム",
+        "settings": [],
+        "actions": [
+          {
+            "key": "backToOnboard",
+            "type": "button",
+            "label": "オンボードプロファイルに戻す",
+            "command": "backToOnboard",
+            "successMessage": "マウス本体のオンボードプロファイルに戻しました",
+            "hint": "このツールでの変更（DPI・レート）はライブ適用のため、マウスの電源再投入やこのボタンでオンボードプロファイルの設定に戻ります。G HUBで保存した値を復元したいときに押してください。"
+          }
+        ]
+      }
+    ]
+  }
+}

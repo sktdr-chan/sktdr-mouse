@@ -1,0 +1,460 @@
+{
+  "profileVersion": 1,
+  "id": "compx-generic",
+
+  "_documentation": {
+    "about": "Compx系チップセット (VID 0x3554) を使う全マウス向けの汎用プロファイル。Scyrox V6/V8、Lamzu Maya等、同一プロトコルの機種をすべてこの1ファイルでカバーします。新機種もVID 0x3554のままリリースされれば自動的に動作します。",
+    "protocolSource": "https://github.com/azais-corentin/scyrox — docs/protocol.md『Scyrox Mouse HID Communication Protocol Specification』(一次情報源)",
+    "additionalReferences": [
+      "https://github.com/zzy6-a/ScyroxTray — 旧世代/新世代プロトコルの区分け",
+      "https://github.com/mikezom/scyrox-v6-battery-plasmoid"
+    ],
+    "howItWorks": "VID 0x3554のベンダー定義コレクションにドングルバージョン照会 (0x1D) を送り、応答があれば接続。ハンドシェーク (0x01) から返るCID/MID/接続タイプで機種を判別し、midNamesからデバイス名を表示します。新機種のMIDが未知でも、HIDの製品名で表示されます。",
+    "knownMids": {
+      "62/1": "Scyrox V8 (8Kドングル/有線/標準ドングル)",
+      "62/2": "Scyrox V6 (8Kドングル/有線/標準ドングル)",
+      "11/4": "Lamzu Maya (LAMZU Pro 1K Receiver)",
+      "2/34": "VXE R1 Pro Max (VXE NordicMouse 1K Dongle, FW v1.21) — フラッシュマップ同一、書き込みACK・読み戻し検証済み (2026-11-18)"
+    },
+    "notCovered": "新世代Scyrox V6S/V8S (VID 0x395A、64バイト別プロトコル) は本プロファイルでは動作しません",
+    "verifiedOn": "Scyrox V8 (MID=1), Scyrox V6 (MID=2), Lamzu Maya (MID=4) — 2026-11-18"
+  },
+
+  "meta": {
+    "name": "Compx Mouse",
+    "brand": "Compx",
+    "models": ["Scyrox V6", "Scyrox V8", "Lamzu Maya", "VXE R1 Pro Max", "その他Compx系"],
+    "notes": "VID 0x3554 (Compx) の旧世代プロトコル。16バイト・レポートID 8・チェックサム (0x55-総和-8)。設定はマウス内フラッシュ 0x0000〜0x00FF に保存。"
+  },
+
+  "midNames": {
+    "1": "Scyrox V8",
+    "2": "Scyrox V6",
+    "4": "Lamzu Maya",
+    "34": "VXE R1 Pro Max"
+  },
+
+  "modelMaxHz": {
+    "1": 8000,
+    "2": 8000,
+    "34": 8000
+  },
+
+  "usb": {
+    "vendorId": "0x3554",
+    "productIds": [],
+    "pidLabels": {},
+    "vendorUsagePageMin": "0xFF00",
+    "probeCommand": "dongleVersion"
+  },
+
+  "transport": {
+    "reportId": 8,
+    "packetLength": 16,
+    "layout": {
+      "command": 0,
+      "status": 1,
+      "addressHi": 2,
+      "addressLo": 3,
+      "length": 4,
+      "data": 5,
+      "dataMax": 10,
+      "checksum": 15
+    },
+    "checksum": {
+      "algorithm": "subtract-from-sum",
+      "base": "0x55",
+      "subtractReportId": true
+    },
+    "singleByteWrite": {
+      "dataLength": 2,
+      "complementBase": "0x55"
+    },
+    "readChunk": 10,
+    "configImage": { "start": "0x0000", "length": 256 },
+    "statusSyncBeforeWrite": "deviceOnline",
+    "unsolicited": {
+      "command": "statusChanged",
+      "flagsOffset": 5
+    }
+  },
+
+  "commands": {
+    "handshake": {
+      "id": "0x01",
+      "dataLength": 8,
+      "randomDataLength": 4,
+      "response": { "cid": 9, "mid": 10, "connectionType": 11 }
+    },
+    "pcDriverStatus": { "id": "0x02", "dataLength": 1 },
+    "deviceOnline": { "id": "0x03", "response": { "online": 5 } },
+    "battery": {
+      "id": "0x04",
+      "response": { "level": 5, "charging": 6, "voltageHi": 7, "voltageLo": 8 }
+    },
+    "enterPair": { "id": "0x05", "dataLength": 2, "data": ["0x00", "0x00", "0x3E"] },
+    "readFlash": { "id": "0x08", "responseMatch": "extended" },
+    "writeFlash": { "id": "0x07" },
+    "factoryReset": { "id": "0x09", "settleMs": 1300 },
+    "statusChanged": { "id": "0x0A", "response": { "flags": 5 } },
+    "getProfile": { "id": "0x0E", "response": { "profile": 5 } },
+    "setProfile": { "id": "0x0F", "dataLength": 1 },
+    "mouseVersion": { "id": "0x12", "response": { "versionMajor": 5, "versionMinor": 6 } },
+    "setLongRange": { "id": "0x16", "dataLength": 10 },
+    "getLongRange": { "id": "0x17", "response": { "state": 5 } },
+    "dongleVersion": { "id": "0x1D", "response": { "versionMajor": 5, "versionMinor": 6 } }
+  },
+
+  "versionFormat": "v{major}.{minorHex2}",
+
+  "connectionTypes": {
+    "0": { "label": "ワイヤレス (最大1K)", "maxHz": 1000 },
+    "1": { "label": "ワイヤレス 4K", "maxHz": 4000 },
+    "2": { "label": "有線 (最大1K)", "maxHz": 1000 },
+    "3": { "label": "有線 8K", "maxHz": 8000 },
+    "4": { "label": "ワイヤレス 2K", "maxHz": 2000 },
+    "5": { "label": "ワイヤレス 8K", "maxHz": 8000 }
+  },
+
+  "statusFlags": {
+    "0x01": "現在のDPIステージが変更されました",
+    "0x02": "ポーリングレートが変更されました",
+    "0x04": "プロファイルが変更されました",
+    "0x08": "DPI設定が変更されました",
+    "0x20": "ライト設定が変更されました",
+    "0x40": "バッテリー状態が変更されました"
+  },
+
+  "ui": {
+    "deviceInfo": [
+      { "key": "product", "label": "製品" },
+      { "key": "connection", "label": "接続方式" },
+      { "key": "mouseVersion", "label": "マウスファームウェア" },
+      { "key": "dongleVersion", "label": "ドングルファームウェア" },
+      { "key": "voltage", "label": "電池電圧" },
+      { "key": "profile", "label": "現在のプロファイル" }
+    ],
+
+    "readButton": {
+      "label": "デバイスから設定を読み出す",
+      "note": "マウス本体のフラッシュから全設定（DPI・ポーリングレート・センサー設定など）を再読み込みします。マウス本体のボタンで設定を変えた後の同期に便利です。",
+      "successMessage": "マウスから設定を読み出しました"
+    },
+
+    "sections": [
+      {
+        "title": "プロファイル",
+        "settings": [
+          {
+            "key": "profileIndex",
+            "type": "segmented",
+            "label": "プロファイル",
+            "read": { "command": "getProfile", "field": "profile" },
+            "write": { "command": "setProfile", "argIndex": 0 },
+            "options": [
+              { "value": 0, "label": "プロファイル 1" },
+              { "value": 1, "label": "プロファイル 2" },
+              { "value": 2, "label": "プロファイル 3" },
+              { "value": 3, "label": "プロファイル 4" }
+            ],
+            "hint": "プロファイルごとに設定一式（DPI・ポーリングレート等）を保存できます。"
+          }
+        ]
+      },
+      {
+        "title": "DPI設定",
+        "settings": [
+          {
+            "key": "dpi",
+            "type": "dpiStages",
+            "label": "DPI",
+            "maxRecords": 8,
+            "valueRange": { "min": 50, "max": 26000, "step": 50 },
+            "count": {
+              "read": { "address": "0x0002", "bytes": 1, "codec": "byte" },
+              "write": { "mode": "singleByte" }
+            },
+            "current": {
+              "read": { "address": "0x0004", "bytes": 1, "codec": "byte" },
+              "write": { "mode": "singleByte" }
+            },
+            "value": {
+              "read": {
+                "address": "0x000C",
+                "stride": 4,
+                "bytes": 4,
+                "codec": { "type": "dpi", "step": 50, "min": 50, "max": 26000 }
+              },
+              "write": { "mode": "bytes" }
+            },
+            "color": {
+              "read": { "address": "0x002C", "stride": 4, "bytes": 4, "codec": "rgbComplement" },
+              "write": { "mode": "bytes" }
+            },
+            "hint": "DPIは50〜26000の範囲で50刻み。マウス本体のDPIボタンでステージを切り替えると、この画面に自動反映されます。"
+          }
+        ]
+      },
+      {
+        "title": "ポーリングレート",
+        "settings": [
+          {
+            "key": "reportRate",
+            "type": "segmented",
+            "label": "ポーリングレート",
+            "unit": " Hz",
+            "limitByConnectionMaxHz": true,
+            "hintFromMaxHz": "この接続方式での最大ポーリングレート: {maxHz} Hz",
+            "hintMouseMaxHz": "マウス本体は最大 {mouseMaxHz} Hz 対応です。現在のドングルでは最大 {maxHz} Hz までが有効 — {maxHz} Hz を超える設定（点線表示）は保存のみ行われ、対応ドングルに交換すると自動的に有効になります。",
+            "read": {
+              "address": "0x0000",
+              "bytes": 1,
+              "codec": {
+                "type": "enum",
+                "values": [
+                  { "value": 125, "code": 8 },
+                  { "value": 250, "code": 4 },
+                  { "value": 500, "code": 2 },
+                  { "value": 1000, "code": 1 },
+                  { "value": 2000, "code": 16 },
+                  { "value": 4000, "code": 32 },
+                  { "value": 8000, "code": 64 }
+                ]
+              }
+            },
+            "write": { "mode": "singleByte" }
+          }
+        ]
+      },
+      {
+        "title": "センサー設定",
+        "settings": [
+          {
+            "key": "lod",
+            "type": "segmented",
+            "label": "Lift-off Distance (LOD)",
+            "read": {
+              "address": "0x000A",
+              "bytes": 1,
+              "codec": {
+                "type": "enum",
+                "values": [
+                  { "value": 0.7, "code": 3, "label": "0.7 mm" },
+                  { "value": 1, "code": 1, "label": "1 mm" },
+                  { "value": 2, "code": 2, "label": "2 mm" }
+                ]
+              }
+            },
+            "write": { "mode": "singleByte" }
+          },
+          {
+            "key": "debounce",
+            "type": "slider",
+            "label": "デバウンサ",
+            "unit": " ms",
+            "min": 0,
+            "max": 30,
+            "step": 1,
+            "read": { "address": "0x00A9", "bytes": 1, "codec": "byte" },
+            "write": { "mode": "singleByte" }
+          },
+          {
+            "key": "motionSync",
+            "type": "toggle",
+            "label": "モーションシンク",
+            "read": { "address": "0x00AB", "bytes": 1, "codec": "bool" },
+            "write": { "mode": "singleByte" }
+          },
+          {
+            "key": "angleSnap",
+            "type": "toggle",
+            "label": "アングルスナップ",
+            "read": { "address": "0x00AF", "bytes": 1, "codec": "bool" },
+            "write": { "mode": "singleByte" }
+          },
+          {
+            "key": "rippleControl",
+            "type": "toggle",
+            "label": "リップルコントロール",
+            "read": { "address": "0x00B1", "bytes": 1, "codec": "bool" },
+            "write": { "mode": "singleByte" }
+          },
+          {
+            "key": "sensor20k",
+            "type": "toggle",
+            "label": "20Kセンサーモード",
+            "read": { "address": "0x0008", "bytes": 1, "codec": "bool" },
+            "write": { "mode": "singleByte" }
+          },
+          {
+            "key": "performanceMode",
+            "type": "toggle",
+            "label": "パフォーマンスモード",
+            "read": { "address": "0x00B5", "bytes": 1, "codec": "bool" },
+            "write": { "mode": "singleByte" }
+          },
+          {
+            "key": "sensorMode",
+            "type": "select",
+            "label": "センサーモード",
+            "read": {
+              "address": "0x00B9",
+              "bytes": 1,
+              "codec": {
+                "type": "enum",
+                "values": [
+                  { "value": "lp", "code": 0, "label": "省電力 (LP)" },
+                  { "value": "hp", "code": 1, "label": "高性能 (HP)" }
+                ]
+              }
+            },
+            "write": { "mode": "singleByte" }
+          },
+          {
+            "key": "sleepTime",
+            "type": "select",
+            "label": "スリープ時間",
+            "read": {
+              "address": "0x00AD",
+              "bytes": 1,
+              "codec": {
+                "type": "enum",
+                "values": [
+                  { "value": "10秒", "code": 1 },
+                  { "value": "30秒", "code": 3 },
+                  { "value": "1分", "code": 6 },
+                  { "value": "5分", "code": 30 },
+                  { "value": "10分", "code": 60 },
+                  { "value": "30分", "code": 180 }
+                ]
+              }
+            },
+            "write": { "mode": "singleByte" }
+          },
+          {
+            "key": "performanceTime",
+            "type": "select",
+            "label": "パフォーマンス時間",
+            "read": {
+              "address": "0x00B7",
+              "bytes": 1,
+              "codec": {
+                "type": "enum",
+                "values": [
+                  { "value": "10秒", "code": 1 },
+                  { "value": "30秒", "code": 3 },
+                  { "value": "1分", "code": 6 },
+                  { "value": "5分", "code": 30 },
+                  { "value": "10分", "code": 60 },
+                  { "value": "30分", "code": 180 }
+                ]
+              }
+            },
+            "write": { "mode": "singleByte" }
+          }
+        ]
+      },
+      {
+        "title": "ライト設定",
+        "settings": [
+          {
+            "key": "light",
+            "type": "group",
+            "label": "ライト",
+            "block": { "address": "0x00A0", "length": 7 },
+            "fields": [
+              {
+                "key": "mode",
+                "type": "select",
+                "label": "モード",
+                "read": {
+                  "offset": 0,
+                  "codec": {
+                    "type": "enum",
+                    "values": [
+                      { "value": 0, "code": 0, "label": "オフ" },
+                      { "value": 1, "code": 1, "label": "カラーフロー" },
+                      { "value": 2, "code": 2, "label": "単色ブリージング" },
+                      { "value": 3, "code": 3, "label": "常時点灯（単色）" },
+                      { "value": 4, "code": 4, "label": "ネオン" },
+                      { "value": 5, "code": 5, "label": "混色ブリージング" },
+                      { "value": 6, "code": 6, "label": "常時点灯（フルカラー）" }
+                    ]
+                  }
+                },
+                "writeOffset": 0
+              },
+              {
+                "key": "color",
+                "type": "color",
+                "label": "カラー",
+                "read": { "offset": 1, "bytes": 3, "codec": "rgb" },
+                "writeOffset": 1
+              },
+              {
+                "key": "speed",
+                "type": "slider",
+                "label": "速度",
+                "min": 1,
+                "max": 10,
+                "step": 1,
+                "read": { "offset": 4, "codec": "byte" },
+                "writeOffset": 4
+              },
+              {
+                "key": "brightness",
+                "type": "slider",
+                "label": "明るさ",
+                "min": 1,
+                "max": 255,
+                "step": 1,
+                "read": { "offset": 5, "codec": "byte" },
+                "writeOffset": 5,
+                "hint": "0〜255の生値で指定します（参照実装ではテーブル変換なし）"
+              }
+            ],
+            "on": {
+              "key": "on",
+              "type": "toggle",
+              "label": "ライト点灯",
+              "read": { "address": "0x00A7", "bytes": 1, "codec": "bool" },
+              "write": { "mode": "singleByte" }
+            }
+          }
+        ]
+      },
+      {
+        "title": "システム",
+        "settings": [
+          {
+            "key": "longRange",
+            "type": "toggle",
+            "label": "ロングレンジモード",
+            "hint": "受信感度優先・消費電力増。非対応ファームウェアでは自動的に非表示になります。",
+            "read": { "command": "getLongRange", "field": "state" },
+            "write": { "command": "setLongRange", "argIndex": 0 }
+          }
+        ],
+        "actions": [
+          {
+            "key": "pairing",
+            "type": "button",
+            "label": "ペアリングモード開始",
+            "command": "enterPair",
+            "confirm": "ドングルをペアリングモードにします（62秒間）。\n実行中のワイヤレス接続は一時切断されます。よろしいですか？",
+            "successMessage": "ペアリングモード開始 — マウスの電源を入れ直して近づけてください"
+          },
+          {
+            "key": "factoryReset",
+            "type": "button",
+            "label": "工場出荷状態に戻す",
+            "danger": true,
+            "command": "factoryReset",
+            "doubleClickConfirm": true,
+            "successMessage": "工場リセットを実行しました"
+          }
+        ]
+      }
+    ]
+  }
+}

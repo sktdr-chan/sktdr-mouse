@@ -1,0 +1,288 @@
+{
+  "profileVersion": 1,
+  "id": "roccat-kone-pro-air",
+  "_documentation": {
+    "about": "このファイルは本体コア (core/, server.js, public/) から独立した、ROCCAT Kone Pro Air 固有のデバイス定義です。設定プロトコルは公式ドライバー (ROCCAT Swarm) のUSB通信を2回のキャプチャセッションで解読したものです。",
+    "protocolSource": "独自リバースエンジニアリング（ROCCAT Swarm ↔ 本機のUSB通信キャプチャ×2セッション、2026-11-18）— 解析記録: research/roccat-kone-pro-air.md",
+    "additionalReferences": [
+      "https://github.com/Tobbesson/roccat-konepro-linux — 兄弟機 Kone Pro 有線 (1e7d:2c88) のレジスタプロトコル",
+      "https://github.com/mattiasdjarv/kone-battery — Kone Pro Air ドングル (1e7d:2c8e) の 90 0A バッテリーパケット",
+      "https://github.com/FortisVoluntas/roccat-burst-pro-air-linux-tool — 同世代機の解析手法（Swarmキャプチャ）の参照元"
+    ],
+    "limitations": [
+      "設定はマウス側から読み戻せないため、ホスト側キャッシュ (data/roccat-kone-pro-air.json) が真実の源になる",
+      "LODコードの意味（07/06の高低対応）は未検証 — UIで切り替えて実際の挙動で確認のこと",
+      "ライト (AIMO) はライブアニメーションストリームで動作するため未対応（適用シーケンスには現状維持の固定ライトブロックを含む）"
+    ],
+    "verifiedOn": "ROCCAT Kone Pro Air 有線 (1e7d:2c92), 2026-11-18, DPI/ポーリング/デバウンサ/アングルスナッピング/アクティブステージを数値照合で確認"
+  },
+  "meta": {
+    "name": "ROCCAT Kone Pro Air",
+    "brand": "ROCCAT",
+    "models": [
+      "Kone Pro Air (有線)"
+    ],
+    "connectionLabel": "有線接続",
+    "notes": "VID 0x1E7D (ROCCAT)。制御チャネルは MI_01 (usagePage 0xFF13) の番号なし65バイト出力レポート。設定適用は Swarm と同一の12コマンド固定シーケンス。"
+  },
+  "usb": {
+    "vendorId": "0x1e7d",
+    "productIds": [
+      "0x2c92"
+    ],
+    "pidLabels": {
+      "0x2c92": "有線接続"
+    },
+    "vendorUsagePageMin": "0xff00",
+    "probeCommand": "battery"
+  },
+  "transport": {
+    "type": "swarmEcho64",
+    "reportId": 0,
+    "packetLength": 64,
+    "commandDelayMs": 100,
+    "_comment": "番号なし (report ID 0) の65バイト出力レポートで書き込み、応答は同じサイズの入力レポート。応答は <cmd0> <cmd1> <status> … のエコーで、status=0x03 (10-xx コマンド) / 0x04 (90-xx 診断コマンド) が成功。"
+  },
+  "commands": {
+    "battery": {
+      "data": "90 0a 00",
+      "response": {
+        "level": 5,
+        "voltageHi": 9,
+        "voltageLo": 8
+      },
+      "_comment": "応答: [5]=残量%, [8..9]=セル電圧 mV (LE16)。"
+    }
+  },
+  "applySequence": {
+    "_comment": "設定変更1回あたり Swarm が送る完全な12コマンドシーケンス（前置7 + 設定ブロック + 後置4、各100ms間隔）。",
+    "preamble": [
+      "10 11 06 00 02",
+      "10 11 06 00 03",
+      "10 11 06 00 04",
+      "10 11 06 00 05",
+      "10 71 05 00 aa 03 00 aa aa",
+      "10 72 01 00 {eco:u8}",
+      "10 11 06 00 01 01 64 bf 0b dc"
+    ],
+    "settingsPacket": "10 50 14 00 01 {polling:u8} {angleSnap:u8} {activeStage:u8} {dpi1:le16x50} {dpi2:le16x50} {dpi3:le16x50} {dpi4:le16x50} {dpi5:le16x50} {lod:u8} 00 00 0f 00 {debounce:u8} 00 00 00",
+    "_settingsLayout": {
+      "[0..3]": "10 50 14 00 ヘッダー",
+      "[4]": "01 固定",
+      "[5]": "ポーリングレートコード = log2(1000/Hz)。検証済み: 0=1000Hz, 1=500Hz, 2=250Hz, 3=125Hz",
+      "[6]": "アングルスナッピング 0=OFF / 1=ON（検証済み）",
+      "[7]": "アクティブDPIステージ 0起点（検証済み）",
+      "[8..17]": "DPI×5 = LE16(値÷50)。検証済み: 18=1200, 10=800, 20=1600, 08=400",
+      "[18]": "LODコード（Swarm表示と照合: 07=Very Low既定, 06=Low — 「カスタム」の符号化は未解明）",
+      "[21]": "0f 固定",
+      "[23]": "デバウンサ ms（検証済み: 8ms→08, 4ms→04）",
+      "checksum": "なし"
+    },
+    "postfix": [
+      "10 50 0b 01 00 64 64 04 09 43 a3 ec 43 a3 ec",
+      "10 50 1c 02 40 40 40 40 40 42 40 40",
+      "10 50 18 03 00 01 00 00 02 00 00 03 00 00 04 00 00 05 00 00 00 00 00 07 00 00 08",
+      "10 50 18 04 00"
+    ],
+    "_postfixComment": "postfix[0] はライトブロック（キャプチャ終了時の現状値を固定で書き戻す＝変化なし）。10 50 18 04 がコミット。前置の 10 72 はEcoモードの現在値を運ぶ（OFF=00, ON=aa — ユーザー確認済み）。",
+    "commandDelayMs": 100,
+    "defaults": {
+      "polling": 0,
+      "angleSnap": 1,
+      "activeStage": 1,
+      "lod": 6,
+      "debounce": 8,
+      "eco": 0,
+      "dpi1": 1200,
+      "dpi2": 800,
+      "dpi3": 1600,
+      "dpi4": 0,
+      "dpi5": 0
+    },
+    "_defaultsComment": "セッション2終了時 (146.55s) のマウス実状態（EcoはOFFに戻した状態）。これらを書き戻しても設定は変化しない。"
+  },
+  "ui": {
+    "deviceInfo": [
+      {
+        "key": "product",
+        "label": "製品"
+      },
+      {
+        "key": "connection",
+        "label": "接続方式"
+      },
+      {
+        "key": "voltage",
+        "label": "電池電圧"
+      }
+    ],
+    "readButton": {
+      "label": "再同期（バッテリー照会）",
+      "note": "本機はプロトコル上、設定の読み戻しに対応していません（公式Swarmも読み出せません）。このボタンはデバイスへのバッテリー照会で生存確認を行い、このツールが保持する設定キャッシュ（最後に書き込んだ値）を表示します。",
+      "successMessage": "再同期しました（デバイス応答OK・設定はこのツールの記録値）"
+    },
+    "sections": [
+      {
+        "title": "一般設定",
+        "settings": [],
+        "actions": [
+          {
+            "key": "keepAwake",
+            "type": "toggle",
+            "label": "アプリ起動中はスリープを防ぐ",
+            "hint": "ONにすると、このツールを開いている間だけ2秒間隔でマウスに軽量なコマンドを送り続け、スリープを防ぎます。OFFにするかアプリを終了するとポーリングが停止し、マウスは通常どおりスリープします。マウス本体の設定は一切変更しません。",
+            "command": "keepAwakeToggle"
+          }
+        ]
+      },
+      {
+        "title": "DPI設定",
+        "settings": [
+          {
+            "key": "dpi",
+            "type": "dpiStages",
+            "label": "DPI",
+            "maxRecords": 5,
+            "countEditable": false,
+            "colors": false,
+            "valueRange": {
+              "min": 50,
+              "max": 19000,
+              "step": 50
+            },
+            "hint": "5つのDPIスロット（未使用は0のまま）。「使用」ボタンでアクティブステージを切り替えると、そのステージのDPIがすぐ体感できます。"
+          }
+        ]
+      },
+      {
+        "title": "ポーリングレート",
+        "settings": [
+          {
+            "key": "polling",
+            "type": "segmented",
+            "label": "ポーリングレート",
+            "unit": " Hz",
+            "read": {
+              "cache": "polling",
+              "codec": {
+                "type": "enum",
+                "values": [
+                  {
+                    "value": 125,
+                    "code": 3
+                  },
+                  {
+                    "value": 250,
+                    "code": 2
+                  },
+                  {
+                    "value": 500,
+                    "code": 1
+                  },
+                  {
+                    "value": 1000,
+                    "code": 0
+                  }
+                ]
+              }
+            },
+            "write": {
+              "cache": "polling"
+            },
+            "hint": "対応は1000Hzまで。コードはSwarm通信と数値照合済み（125→3, 500→1, 1000→0）。"
+          }
+        ]
+      },
+      {
+        "title": "センサー設定",
+        "settings": [
+          {
+            "key": "angleSnap",
+            "type": "toggle",
+            "label": "アングルスナッピング",
+            "read": {
+              "cache": "angleSnap",
+              "codec": "bool"
+            },
+            "write": {
+              "cache": "angleSnap"
+            }
+          },
+          {
+            "key": "lod",
+            "type": "segmented",
+            "label": "Lift-off Distance (LOD)",
+            "read": {
+              "cache": "lod",
+              "codec": {
+                "type": "enum",
+                "values": [
+                  {
+                    "value": 7,
+                    "code": 7,
+                    "label": "非常に低い Very Low"
+                  },
+                  {
+                    "value": 6,
+                    "code": 6,
+                    "label": "低い Low"
+                  }
+                ]
+              }
+            },
+            "write": {
+              "cache": "lod"
+            },
+            "hint": "Swarm表示と照合済み（コード7=Very Low=既定、コード6=Low）。Swarmにはさらに「カスタム」設定が存在します（符号化は未解明のため本ツールでは未対応）。"
+          },
+          {
+            "key": "eco",
+            "type": "toggle",
+            "label": "Ecoモード",
+            "read": {
+              "cache": "eco",
+              "codec": {
+                "type": "enum",
+                "values": [
+                  {
+                    "value": false,
+                    "code": 0
+                  },
+                  {
+                    "value": true,
+                    "code": 170
+                  }
+                ]
+              }
+            },
+            "write": {
+              "cache": "eco"
+            },
+            "hint": "ON/OFFは通信解析で確認済み（OFF=0x00, ON=0xaa）。Ecoモード中はセンサー感度・ポーリング等が省電力側に制限される場合があります。"
+          }
+        ]
+      },
+      {
+        "title": "デバウンサ",
+        "settings": [
+          {
+            "key": "debounce",
+            "type": "slider",
+            "label": "デバウンサ",
+            "unit": " ms",
+            "min": 0,
+            "max": 10,
+            "step": 1,
+            "read": {
+              "cache": "debounce"
+            },
+            "write": {
+              "cache": "debounce"
+            },
+            "hint": "0〜10ms。Swarm通信と数値照合済み（8ms→08, 4ms→04）。"
+          }
+        ]
+      }
+    ]
+  }
+}

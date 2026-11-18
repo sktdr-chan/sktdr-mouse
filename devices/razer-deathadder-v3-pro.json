@@ -1,0 +1,172 @@
+{
+  "profileVersion": 1,
+  "id": "razer-deathadder-v3-pro",
+
+  "_documentation": {
+    "about": "Razer DeathAdder V3 Pro（Focus Pro 35K）固有のデバイス定義。Razerプロトコル（openrazerプロジェクトで文書化）— 5番目のプロトコルファミリー。",
+    "protocolSource": "openrazer (GPL-2.0) — driver/razercommon.c のレポート形式・CRC・応答status、driver/razerchromacommon.c のコマンド定義、driver/razermouse_driver.c の機種別コマンド選択・transaction id。本実装は独立に書かれたもので、openrazerをプロトコル文書として参照する。",
+    "wireFormat": "マウスインターフェース (iface 0) 上の90バイトfeatureレポート（レポートID 0x00）。[status 0x00, transaction 0x1f, 残パケットBE, proto 0x00, dataSize, class, cmd, args[80], crc@88=XOR(2..87), 0x00]。送信 sendFeatureReport → 受信 getFeatureReport。応答status: 0x02=成功, 0x01=busy(成功扱い), 0x03=失敗, 0x04=タイムアウト, 0x05=未対応。応答はclass/cmdをエコー。",
+    "verifiedOn": "DeathAdder V3 Pro 有線 (1532:00B6), 2026-11-18 — FW v1.00、シリアル取得、DPIステージ(800/1600×2段)読み書き、ポーリングレート1000↔500Hz適用・復元、アイドル時間300↔400秒適用・復元、バッテリー(有線: 充電中255=100%)。全書き込みは即時適用かつデバイスに永続化される。",
+    "notCovered": "無線(HyperPollingドングル PID 0x00B7)・Alternate版(0x00C2/C3)は未検証。レートは有線標準FWでは125/500/1000Hz(旧コマンド系)。LED制御・ボタン割当は未実装。"
+  },
+
+  "meta": {
+    "name": "Razer DeathAdder V3 Pro",
+    "brand": "Razer",
+    "models": ["DeathAdder V3 Pro (有線)"],
+    "notes": "Razer 90バイトfeatureレポート・プロトコル。設定は即時適用・永続化（保存コマンド不要）。",
+    "connectionLabel": "USB有線"
+  },
+
+  "usb": {
+    "vendorId": "0x1532",
+    "productIds": ["0x00B6"],
+    "pidLabels": { "0x00B6": "DeathAdder V3 Pro (有線)" },
+    "vendorUsagePageMin": "0x0000",
+    "probeCommand": "mouseVersion"
+  },
+
+  "transport": {
+    "type": "razer",
+    "reportId": 0,
+    "packetLength": 90,
+    "transactionId": "0x1f",
+    "commandImages": [
+      { "command": "getDpiStages", "base": 0 }
+    ],
+    "configImage": { "length": 90 }
+  },
+
+  "commands": {
+    "mouseVersion": {
+      "cls": "0x00", "cmd": "0x81", "size": 2,
+      "response": { "versionMajor": 9, "versionMinor": 10 },
+      "_doc": "応答 args[0]=メジャー, args[1]=マイナー"
+    },
+    "battery": {
+      "cls": "0x07", "cmd": "0x80", "size": 2, "scale": 255,
+      "response": { "level": 9 },
+      "_doc": "args[1]=0-255の生レベル。scaleで%変換"
+    },
+    "chargingStatus": {
+      "cls": "0x07", "cmd": "0x84", "size": 2,
+      "response": { "charging": 9 },
+      "_doc": "args[1]=1で充電中"
+    },
+    "getDpiStages": {
+      "cls": "0x04", "cmd": "0x86", "size": 38, "args": ["0x01"],
+      "_doc": "args=[VARSTORE 0x01] → 応答 args: [VARSTORE, active(1-based), count, 各ステージ[idx(1-based), X BE16, Y BE16, 0, 0]×5]"
+    },
+    "setDpiStages": {
+      "cls": "0x04", "cmd": "0x06", "size": 38,
+      "_doc": "args = [VARSTORE, active(1-based), count, ステージレコード×5]"
+    },
+    "getReportRate": {
+      "cls": "0x00", "cmd": "0x85", "size": 1,
+      "response": { "code": 8 },
+      "_doc": "args[0] ∈ {0x01=1000, 0x02=500, 0x08=125}"
+    },
+    "setReportRate": {
+      "cls": "0x00", "cmd": "0x05", "size": 1,
+      "_doc": "args[0] = レートコード"
+    },
+    "getIdleTime": {
+      "cls": "0x07", "cmd": "0x83", "size": 2,
+      "response": { "seconds": 8 },
+      "_doc": "args[0..1] = BE16 秒 (60-900)"
+    },
+    "setIdleTime": {
+      "cls": "0x07", "cmd": "0x03", "size": 2,
+      "_doc": "args[0..1] = BE16 秒"
+    }
+  },
+
+  "versionFormat": "v{major}.{minor}",
+
+  "ui": {
+    "deviceInfo": [
+      { "key": "product", "label": "製品" },
+      { "key": "connection", "label": "接続方式" },
+      { "key": "mouseVersion", "label": "ファームウェア" }
+    ],
+
+    "sections": [
+      {
+        "title": "DPI設定",
+        "settings": [
+          {
+            "key": "dpi",
+            "type": "dpiStages",
+            "label": "DPI",
+            "maxRecords": 5,
+            "colors": false,
+            "valueRange": { "min": 100, "max": 35000, "step": 50 },
+            "count": {
+              "read": { "address": 10, "bytes": 1, "codec": "byte" }
+            },
+            "current": {
+              "read": { "address": 9, "bytes": 1, "codec": "oneBased" }
+            },
+            "value": {
+              "read": {
+                "address": 12,
+                "stride": 7,
+                "bytes": 4,
+                "codec": { "type": "dpiBeXY4", "step": 50, "min": 100, "max": 35000 }
+              }
+            },
+            "write": {
+              "mode": "commandFrame",
+              "command": "setDpiStages",
+              "normalizeDpiStages": true,
+              "payload": [{ "imageBytes": [8, 38] }]
+            },
+            "hint": "100〜35000（50刻み）。X/Y独立領域に同じ値を書き込みます。変更は即時適用・保存されます。"
+          }
+        ]
+      },
+      {
+        "title": "ポーリングレート",
+        "settings": [
+          {
+            "key": "reportRate",
+            "type": "segmented",
+            "label": "ポーリングレート",
+            "unit": " Hz",
+            "read": {
+              "command": "getReportRate",
+              "field": "code",
+              "codec": {
+                "type": "enum",
+                "values": [
+                  { "value": 1000, "code": 1 },
+                  { "value": 500, "code": 2 },
+                  { "value": 125, "code": 8 }
+                ]
+              }
+            },
+            "write": { "mode": "commandFrame", "command": "setReportRate", "payload": [{ "value": "enumCode" }] },
+            "hint": "有線標準ファームウェアでは125/500/1000Hzに対応します。"
+          }
+        ]
+      },
+      {
+        "title": "電源管理",
+        "settings": [
+          {
+            "key": "sleepTime",
+            "type": "slider",
+            "label": "スリープまでの時間",
+            "unit": " 秒",
+            "min": 60,
+            "max": 900,
+            "step": 10,
+            "read": { "command": "getIdleTime", "field": "seconds", "bytes": 2 },
+            "write": { "mode": "commandFrame", "command": "setIdleTime", "payload": [{ "value": "be16" }] },
+            "hint": "無操作でスリープするまでの時間（60〜900秒）"
+          }
+        ]
+      }
+    ]
+  }
+}

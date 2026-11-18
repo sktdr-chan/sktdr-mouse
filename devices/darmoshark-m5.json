@@ -1,0 +1,404 @@
+{
+  "profileVersion": 1,
+  "id": "darmoshark-m5",
+
+  "_documentation": {
+    "about": "Darmoshark M5 (PAW3395, Nordic nRF系) 固有のデバイス定義。Nordic系「MOJI」プロトコル — Compx系（Scyrox等）とは全く別物。",
+    "protocolSource": "公式ウェブドライバー (darmoshark.cc / Angular バンドル) の逆解析 + 実機検証。参照実装: github.com/ayasaki-exs/darmoshark-battery の docs/PROTOCOL.md（Linuxカーネルモジュール向け電源プロトコル文書、1Kレシーバー 1915:0723 で検証済み）",
+    "additionalReferences": [
+      "https://github.com/mark2712/darmoshark_m5_air — 公式ウェブドライバーのオフラインミラー（M5 AIR用だが同一エンジン、プロトコル抽出に使用）"
+    ],
+    "wireFormat": "usagePage 0xFF0A / usage 1 コレクション。レポートID 0x00 + 64バイトフレーム（node-hidでは [0x00, ...frame64] の65バイト書き込みが必要）。フレーム: [0]=type, [1]=index, [2]=opcode, [3]=sub, [4..62]=payload, [63]=チェックサム（フレーム全体の合計が 0xA1 になるよう 0xA1-総和）。type の bit6 (0x40) は 2.4GHz ワークモード印で、ワイヤレス時はコマンドIDに焼き込む。応答は (type&~0x40, sub) をエコー。type 0x1F/0x5F はNACK（sub=エラーコード、0x05=モード不一致, 0x08=引数不正を実測）。",
+    "verifiedOn": "Darmoshark M5 + 8K NRF Dongle (0x1915:0x0725), 2026-11-18 — マウスFW v2.1.5 (PID 0x0716)。全読み出し（getBaseInfo/getLight/getVersion/getBtn×8）と全書き込み（setDpi/setReportRate/setExtConf/setBtnTime/setLight/saveData）を実機確認済み。ドングルはマウスのスリープ中も全コマンドに応答する。"
+  },
+
+  "meta": {
+    "name": "Darmoshark M5",
+    "brand": "Darmoshark",
+    "models": ["M5 (8K NRF Dongle)", "M5 (1K NRF Receiver)"],
+    "notes": "VID 0x1915 (Nordic)。設定はドングル経由でコマンドフレームを送受信（フラッシュメモリマップではない）。DPIはX/Y独立（UIでは同値で書き込み）。有線接続 (PID 0x0737) は未対応。",
+    "connectionLabel": "ワイヤレス (8Kドングル)"
+  },
+
+  "usb": {
+    "vendorId": "0x1915",
+    "productIds": ["0x0725", "0x0723"],
+    "pidLabels": {
+      "0x0725": "8K NRF Dongle",
+      "0x0723": "1K NRF Receiver"
+    },
+    "vendorUsagePageMin": "0xFF00",
+    "probeCommand": "receiverState"
+  },
+
+  "transport": {
+    "type": "moji64",
+    "reportId": 0,
+    "packetLength": 64,
+    "layout": { "status": 1, "checksum": 63 },
+    "checksum": { "base": "0xA1" },
+    "commandImages": [
+      { "command": "getBaseInfo", "base": 0 },
+      { "command": "getLight", "base": 64 }
+    ],
+    "configImage": { "length": 128 }
+  },
+
+  "commands": {
+    "receiverState": {
+      "id": "0x01", "opcode": "0x81", "sub": "0x01",
+      "_doc": "ドングルの状態。応答 f[4] bit3=リンク状態、f[5..6]=VID、f[7..8]=ドングルPID、f[9]=最大ポーリングコード、f[11..12]=マウスPID。マウスのスリープ中も応答する"
+    },
+    "battery": {
+      "id": "0x41", "opcode": "0x81", "sub": "0x01",
+      "response": { "level": 6, "charging": 5, "profile": 7 }
+    },
+    "getBaseInfo": {
+      "id": "0x44", "opcode": "0x81", "sub": "0x01",
+      "_doc": "設定ブロック全体 → image[0..63]: [4]=sysフラグ(bit0=アングルスナップ,bit1=センサー性能,bit4=リップル,bit5=モーションシンク,bit6=eスポーツ,bit7=スクロール方向), [5]=ポーリングコード(1-6), [6]=有効ステージマスク, [7]=現在ステージ, [8..27]=DPI X/Y le16ペア×5, [28..42]=ステージカラーRGB×5(読み取り専用), [43]=LOD, [44]=アングル調整, [50..53]=スリープ秒×2, [54]=デバウンサms"
+    },
+    "getLight": {
+      "id": "0x45", "opcode": "0x81", "sub": "0x01",
+      "_doc": "ライト状態 → image[64..127]: [5]=モード(0-6), [7]=明るさ, [9]=速度, [11..13]=RGB×3ゾーン"
+    },
+    "mouseVersion": {
+      "id": "0x40", "opcode": "0x81", "sub": "0x00",
+      "response": { "versionMajor": 9, "versionMinor": 8 },
+      "_doc": "応答 f[4..5]=マウスPID, f[9]=メジャー, f[8]=マイナー(高低ニブル分割)"
+    },
+    "setDpi": { "id": "0x44", "opcode": "0xB5", "sub": "0x02" },
+    "setReportRate": { "id": "0x44", "opcode": "0x84", "sub": "0x04" },
+    "setExtConf": { "id": "0x44", "opcode": "0x84", "sub": "0x0A" },
+    "setBtnTime": { "id": "0x44", "opcode": "0x86", "sub": "0x0E" },
+    "setLight": { "id": "0x45", "opcode": "0x91", "sub": "0x02" },
+    "switchProfile": { "id": "0x42", "opcode": "0x82", "sub": "0x01" },
+    "saveData": { "id": "0x4A", "opcode": "0x81", "sub": "0x01" },
+    "factoryReset": { "id": "0x49", "opcode": "0x81", "sub": "0xFF", "settleMs": 1300 }
+  },
+
+  "versionFormat": "v{major}.{minorHi}.{minorLo}",
+
+  "ui": {
+    "deviceInfo": [
+      { "key": "product", "label": "製品" },
+      { "key": "connection", "label": "接続方式" },
+      { "key": "mouseVersion", "label": "マウスファームウェア" },
+      { "key": "profile", "label": "現在のプロファイル" }
+    ],
+
+    "readButton": {
+      "label": "デバイスから設定を読み出す",
+      "note": "マウス本体から全設定（DPI・ポーリングレート・センサー設定・ライト）を再読み込みします。",
+      "successMessage": "マウスから設定を読み出しました"
+    },
+
+    "sections": [
+      {
+        "title": "プロファイル",
+        "settings": [
+          {
+            "key": "profileIndex",
+            "type": "segmented",
+            "label": "プロファイル",
+            "read": { "command": "battery", "field": "profile" },
+            "write": { "mode": "mojiCommand", "command": "switchProfile", "payload": [{ "value": "u8" }] },
+            "options": [
+              { "value": 0, "label": "プロファイル 1" },
+              { "value": 1, "label": "プロファイル 2" },
+              { "value": 2, "label": "プロファイル 3" },
+              { "value": 3, "label": "プロファイル 4" },
+              { "value": 4, "label": "プロファイル 5" }
+            ],
+            "hint": "プロファイルごとに設定一式を保存できます。"
+          }
+        ]
+      },
+      {
+        "title": "DPI設定",
+        "settings": [
+          {
+            "key": "dpi",
+            "type": "dpiStages",
+            "label": "DPI",
+            "maxRecords": 5,
+            "colors": false,
+            "valueRange": { "min": 50, "max": 26000, "step": 50 },
+            "count": {
+              "read": { "address": 6, "bytes": 1, "codec": "stagesMask" }
+            },
+            "current": {
+              "read": { "address": 7, "bytes": 1, "codec": "byte" }
+            },
+            "value": {
+              "read": {
+                "address": 8,
+                "stride": 4,
+                "bytes": 4,
+                "codec": { "type": "dpiLeXY", "step": 50, "min": 50, "max": 26000 }
+              }
+            },
+            "write": { "mode": "mojiCommand", "command": "setDpi", "payload": [{ "imageBytes": [4, 51] }] },
+            "hint": "DPIは50〜26000の範囲で50刻み。X/Y独立ですが同じ値で書き込まれます。"
+          }
+        ]
+      },
+      {
+        "title": "ポーリングレート",
+        "settings": [
+          {
+            "key": "reportRate",
+            "type": "segmented",
+            "label": "ポーリングレート",
+            "unit": " Hz",
+            "read": {
+              "address": 5,
+              "bytes": 1,
+              "codec": {
+                "type": "enum",
+                "values": [
+                  { "value": 125, "code": 1 },
+                  { "value": 500, "code": 2 },
+                  { "value": 1000, "code": 3 },
+                  { "value": 2000, "code": 4 },
+                  { "value": 4000, "code": 5 },
+                  { "value": 8000, "code": 6 }
+                ]
+              }
+            },
+            "write": {
+              "mode": "mojiCommand",
+              "command": "setReportRate",
+              "updateImage": { "type": "byte" },
+              "payload": [{ "image": 5 }]
+            }
+          }
+        ]
+      },
+      {
+        "title": "センサー設定",
+        "settings": [
+          {
+            "key": "lod",
+            "type": "segmented",
+            "label": "Lift-off Distance (LOD)",
+            "read": {
+              "address": 43,
+              "bytes": 1,
+              "codec": {
+                "type": "enum",
+                "values": [
+                  { "value": 0, "code": 0, "label": "低 (0.7mm)" },
+                  { "value": 1, "code": 1, "label": "中 (1mm)" },
+                  { "value": 2, "code": 2, "label": "高 (2mm)" }
+                ]
+              }
+            },
+            "write": {
+              "mode": "mojiCommand",
+              "command": "setExtConf",
+              "updateImage": { "type": "byte" },
+              "payload": [{ "image": 4 }, { "image": 43 }, { "image": 44 }]
+            }
+          },
+          {
+            "key": "angleSnap",
+            "type": "toggle",
+            "label": "アングルスナップ",
+            "read": { "address": 4, "bytes": 1, "codec": { "type": "bit", "bit": 0 } },
+            "write": {
+              "mode": "mojiCommand",
+              "command": "setExtConf",
+              "updateImage": { "type": "bit", "bit": 0 },
+              "payload": [{ "image": 4 }, { "image": 43 }, { "image": 44 }]
+            }
+          },
+          {
+            "key": "sensorPower",
+            "type": "toggle",
+            "label": "センサー高性能モード",
+            "hint": "センサーを常時高性能状態に保ちます（消費電力増）。",
+            "read": { "address": 4, "bytes": 1, "codec": { "type": "bit", "bit": 1 } },
+            "write": {
+              "mode": "mojiCommand",
+              "command": "setExtConf",
+              "updateImage": { "type": "bit", "bit": 1 },
+              "payload": [{ "image": 4 }, { "image": 43 }, { "image": 44 }]
+            }
+          },
+          {
+            "key": "rippleControl",
+            "type": "toggle",
+            "label": "リップルコントロール",
+            "hint": "DPIが9000超のときのリップルを抑制します。",
+            "read": { "address": 4, "bytes": 1, "codec": { "type": "bit", "bit": 4 } },
+            "write": {
+              "mode": "mojiCommand",
+              "command": "setExtConf",
+              "updateImage": { "type": "bit", "bit": 4 },
+              "payload": [{ "image": 4 }, { "image": 43 }, { "image": 44 }]
+            }
+          },
+          {
+            "key": "motionSync",
+            "type": "toggle",
+            "label": "モーションシンク",
+            "read": { "address": 4, "bytes": 1, "codec": { "type": "bit", "bit": 5 } },
+            "write": {
+              "mode": "mojiCommand",
+              "command": "setExtConf",
+              "updateImage": { "type": "bit", "bit": 5 },
+              "payload": [{ "image": 4 }, { "image": 43 }, { "image": 44 }]
+            }
+          },
+          {
+            "key": "esportsMode",
+            "type": "toggle",
+            "label": "eスポーツモード",
+            "hint": "センサーと制御チップを最も活性な状態にします。消費電力が大幅に増加します。ポーリングレート2kHz超では自動有効化されます。",
+            "read": { "address": 4, "bytes": 1, "codec": { "type": "bit", "bit": 6 } },
+            "write": {
+              "mode": "mojiCommand",
+              "command": "setExtConf",
+              "updateImage": { "type": "bit", "bit": 6 },
+              "payload": [{ "image": 4 }, { "image": 43 }, { "image": 44 }]
+            }
+          },
+          {
+            "key": "scrollReverse",
+            "type": "toggle",
+            "label": "スクロール方向反転",
+            "read": { "address": 4, "bytes": 1, "codec": { "type": "bit", "bit": 7 } },
+            "write": {
+              "mode": "mojiCommand",
+              "command": "setExtConf",
+              "updateImage": { "type": "bit", "bit": 7 },
+              "payload": [{ "image": 4 }, { "image": 43 }, { "image": 44 }]
+            }
+          },
+          {
+            "key": "sleepTime",
+            "type": "slider",
+            "label": "スリープ時間",
+            "unit": " 秒",
+            "min": 60,
+            "max": 3600,
+            "step": 60,
+            "read": { "address": 52, "bytes": 2, "codec": "le16" },
+            "write": {
+              "mode": "mojiCommand",
+              "command": "setBtnTime",
+              "updateImage": { "type": "byte" },
+              "payload": [{ "imageLe16": 52 }, { "imageLe16": 52 }, { "image": 54 }]
+            },
+            "hint": "無操作でスリープするまでの時間（既定600秒 = 10分）"
+          },
+          {
+            "key": "debounce",
+            "type": "slider",
+            "label": "デバウンサ",
+            "unit": " ms",
+            "min": 0,
+            "max": 32,
+            "step": 1,
+            "read": { "address": 54, "bytes": 1, "codec": "byte" },
+            "write": {
+              "mode": "mojiCommand",
+              "command": "setBtnTime",
+              "updateImage": { "type": "byte" },
+              "payload": [{ "imageLe16": 52 }, { "imageLe16": 52 }, { "image": 54 }]
+            },
+            "hint": "低くするとダブルクリックが発生することがあります。"
+          }
+        ]
+      },
+      {
+        "title": "ライト設定",
+        "settings": [
+          {
+            "key": "light",
+            "type": "group",
+            "label": "ライト",
+            "block": { "address": 64, "length": 20 },
+            "fields": [
+              {
+                "key": "mode",
+                "type": "select",
+                "label": "モード",
+                "read": {
+                  "offset": 5,
+                  "codec": {
+                    "type": "enum",
+                    "values": [
+                      { "value": 0, "code": 0, "label": "オフ" },
+                      { "value": 1, "code": 1, "label": "単色 常時点灯" },
+                      { "value": 2, "code": 2, "label": "単色 ブリージング" },
+                      { "value": 3, "code": 3, "label": "フルカラーサイクル" },
+                      { "value": 4, "code": 4, "label": "カラーフロー" },
+                      { "value": 5, "code": 5, "label": "単色フロー" },
+                      { "value": 6, "code": 6, "label": "ネオンフラッシュ" }
+                    ]
+                  }
+                },
+                "writeOffset": 5
+              },
+              {
+                "key": "brightness",
+                "type": "slider",
+                "label": "明るさ",
+                "min": 1,
+                "max": 255,
+                "step": 1,
+                "read": { "offset": 7, "codec": "byte" },
+                "writeOffset": 7,
+                "hint": "1〜255の生値で指定します"
+              },
+              {
+                "key": "speed",
+                "type": "slider",
+                "label": "速度",
+                "min": 1,
+                "max": 10,
+                "step": 1,
+                "read": { "offset": 9, "codec": "byte" },
+                "writeOffset": 9
+              },
+              {
+                "key": "color",
+                "type": "color",
+                "label": "カラー",
+                "read": { "offset": 11, "bytes": 3, "codec": "rgb" },
+                "writeOffset": 11
+              }
+            ],
+            "write": {
+              "mode": "mojiCommand",
+              "command": "setLight",
+              "payload": [
+                1, { "image": 69 }, 7, { "image": 71 }, 1, { "image": 73 }, 1,
+                { "image": 75 }, { "image": 76 }, { "image": 77 },
+                { "image": 75 }, { "image": 76 }, { "image": 77 },
+                { "image": 75 }, { "image": 76 }, { "image": 77 }
+              ]
+            },
+            "hint": "カラーは全3ゾーン（ロゴ・ホイール・底部）に同時適用されます。"
+          }
+        ]
+      },
+      {
+        "title": "システム",
+        "settings": [],
+        "actions": [
+          {
+            "key": "factoryReset",
+            "type": "button",
+            "label": "工場出荷状態に戻す",
+            "danger": true,
+            "command": "factoryReset",
+            "doubleClickConfirm": true,
+            "successMessage": "工場リセットを実行しました"
+          }
+        ]
+      }
+    ]
+  }
+}
