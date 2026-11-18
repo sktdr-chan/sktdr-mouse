@@ -769,16 +769,60 @@ function setChip(el, text, cls) {
   el.className = `chip ${cls}`;
 }
 
+/* ------------------------------------------------ connected-device chips */
+
+const chipState = new Map(); // deviceId -> { seenAt, active }
+const HIDE_AFTER_MS = 60 * 1000; // hide inactive (offline) chips after 1 minute
+
+/** Which devices should currently show a header chip, and how. */
+function visibleChips() {
+  const now = Date.now();
+  const out = [];
+  for (const d of devicesStatus) {
+    const isOnline = d.connected && d.online;
+    let cs = chipState.get(d.id);
+    if (!cs) {
+      cs = { seenAt: isOnline ? now : 0 };
+      chipState.set(d.id, cs);
+    }
+    if (isOnline) cs.seenAt = now; // last time we saw it alive/online
+    const expired = !isOnline && now - cs.seenAt >= HIDE_AFTER_MS;
+    if (cs.seenAt === 0) continue; // never connected: registered but not shown
+    if (expired) continue; // offline for over a minute: hidden (listed in 管理)
+    out.push({ device: d, isOnline, remaining: Math.max(1, Math.ceil((HIDE_AFTER_MS - (now - cs.seenAt)) / 1000)) });
+  }
+  // online chips first, then inactive ones
+  out.sort((a, b) => Number(b.isOnline) - Number(a.isOnline));
+  return out;
+}
+
 function renderDeviceChips() {
   const holder = $('#deviceChips');
   holder.innerHTML = '';
-  for (const d of devicesStatus) {
+  const chips = visibleChips();
+  // Does the active device get a live chip of its own? If not (it's offline)
+  // we render it separately as a gray, non-clickable chip so the header
+  // always shows which device is being configured.
+  if (activeDevice) {
+    const live = chips.find((c) => c.device.id === activeDevice && c.isOnline);
+    if (!live) {
+      const d = devicesStatus.find((x) => x.id === activeDevice);
+      if (d) {
+        const chip = document.createElement('button');
+        chip.className = 'chip device-chip chip-off';
+        chip.disabled = true;
+        chip.textContent = d.name + (d.connected && !d.online ? '（スリープ中）' : '');
+        chip.title = d.id;
+        holder.appendChild(chip);
+      }
+    }
+  }
+  for (const { device: d, isOnline } of chips) {
     const chip = document.createElement('button');
     chip.className =
       'chip device-chip' +
-      (d.id === activeDevice ? ' active' : '') +
-      (d.connected ? (d.online ? ' chip-ok' : ' chip-warn') : ' chip-off');
-    chip.textContent = d.name + (d.connected ? '' : ' （未接続）');
+      (isOnline ? (d.id === activeDevice ? ' active' : ' chip-ok') : ' chip-off');
+    chip.textContent = d.name + (isOnline ? '' : '（切断・スリープ）');
     chip.title = d.id;
     chip.addEventListener('click', async () => {
       if (busy || d.id === activeDevice) return;
@@ -1175,6 +1219,89 @@ function connectEvents() {
 
 /* -------------------------------------------------------------------- init */
 
+/* ------------------------------------------------ manage dialog */
+
+async function selectDeviceFromManage(deviceId) {
+  const dlg = $('#manageDialog');
+  if (dlg && dlg.open) dlg.close();
+  if (busy || deviceId === activeDevice) return;
+  clearPending();
+  activeDevice = deviceId;
+  render();
+  await loadSchema(deviceId);
+  await loadConfig(deviceId);
+}
+
+function statusLineFor(d) {
+  if (d.connected && d.online) {
+    const parts = ['接続中'];
+    if (d.battery && d.battery.level != null) parts.push(`残量 ${d.battery.level}%`);
+    return { text: parts.join(' / '), cls: 'manage-live' };
+  }
+  if (d.connected) {
+    return { text: 'スリープ中', cls: 'manage-sleep' };
+  }
+  const cs = chipState.get(d.id);
+  const seenBefore = cs && cs.seenAt > 0;
+  return { text: seenBefore ? '未接続（直前に接続あり）' : '未接続', cls: '' };
+}
+
+function renderManageList() {
+  const container = $('#manageList');
+  if (!container) return;
+  container.innerHTML = '';
+  for (const d of devicesStatus) {
+    const row = document.createElement('div');
+    row.className =
+      'manage-row' +
+      (d.id === activeDevice && d.connected && d.online ? ' active' : '') +
+      (d.connected && d.online ? '' : ' inactive');
+    const name = document.createElement('span');
+    name.className = 'manage-name';
+    name.textContent = d.name;
+    name.title = d.id;
+    const st = document.createElement('span');
+    const stInfo = statusLineFor(d);
+    st.className = 'manage-status ' + stInfo.cls;
+    st.textContent = stInfo.text;
+    row.append(name, st);
+    if (d.connected && d.id !== activeDevice) {
+      const btn = document.createElement('button');
+      btn.className = 'btn small manage-use';
+      btn.textContent = '選択';
+      btn.addEventListener('click', () => selectDeviceFromManage(d.id));
+      row.appendChild(btn);
+    } else if (d.id === activeDevice) {
+      const badge = document.createElement('span');
+      badge.className = 'manage-status';
+      badge.textContent = '表示中';
+      row.appendChild(badge);
+    }
+    container.appendChild(row);
+  }
+  const note = document.createElement('p');
+  note.className = 'empty-note';
+  note.textContent = `対応機種: ${devicesStatus.map((x) => x.name).join('、') || '-'}`;
+  container.appendChild(note);
+}
+
+function initManageDialog() {
+  const dlg = $('#manageDialog');
+  if (!dlg) return;
+  $('#manageBtn').addEventListener('click', () => {
+    renderManageList();
+    dlg.showModal();
+  });
+  $('#manageClose').addEventListener('click', () => dlg.close());
+  dlg.addEventListener('click', (ev) => {
+    if (ev.target === dlg) {
+      const rect = dlg.getBoundingClientRect();
+      const outside = ev.clientX < rect.left || ev.clientX > rect.right || ev.clientY < rect.top || ev.clientY > rect.bottom;
+      if (outside) dlg.close();
+    }
+  });
+}
+
 async function init() {
   render();
   // apply-mode toggle (即時適用 / 保存ボタン) — persisted in localStorage
@@ -1197,6 +1324,13 @@ async function init() {
   }
   if (applyBtn) applyBtn.addEventListener('click', applyPending);
   updateApplyButton();
+  initManageDialog();
+  // chips gray out after 1 minute offline: refresh their state periodically
+  setInterval(() => {
+    renderDeviceChips();
+    const dlg = $('#manageDialog');
+    if (dlg && dlg.open) renderManageList();
+  }, 5000);
   try {
     const r = await fetch('/api/status');
     const j = await r.json();

@@ -14,6 +14,7 @@
     <span id="deviceChips" class="device-chips"></span>
     <span id="connChip" class="chip chip-off">未接続</span>
     <span id="batteryChip" class="chip chip-off" title="バッテリー">🔋 --%</span>
+    <button id="manageBtn" class="chip manage-chip" title="対応するマウスの一覧と管理">⚙ 管理</button>
     <label class="chip mode-chip" title="変更の適用方法：即時適用か、保存ボタンでまとめて適用か">
       <input type="checkbox" id="applyModeToggle" checked>
       <span id="applyModeLabel">即時適用</span>
@@ -41,6 +42,19 @@
   </section>
 
 </main>
+
+<!-- 対応するマウスの一覧・管理 -->
+<dialog id="manageDialog">
+  <header class="manage-header">
+    <h3>対応するマウス</h3>
+    <button id="manageClose" class="btn small" title="閉じる">✕</button>
+  </header>
+  <p class="hint">
+    接続中のマウスが上部に表示されます。非アクティブ（切断・スリープ）になったマウスは灰色になり、
+    1分間再接続されないと自動で消えます。
+  </p>
+  <div id="manageList"></div>
+</dialog>
 
 <div id="toasts"></div>
 <script src="app.js"></script>

@@ -86,10 +86,59 @@ html, body {
   color: var(--text-dim);
   white-space: nowrap;
 }
+.chip.active,
+.device-chip.active {
+  /* the device whose settings page is currently open: strong white border
+     (and a matching text color) so it reads as ACTIVE at a glance */
+  border: 2px solid #ffffff;
+  color: #ffffff;
+  box-shadow:
+    0 0 0 3px rgba(255, 255, 255, 0.08),
+    0 0 16px rgba(255, 255, 255, 0.18);
+}
+.chip.active { color: #ffffff; }
 .chip-ok   { color: var(--accent-2); border-color: rgba(61, 220, 132, 0.35); }
 .chip-warn { color: var(--warn); border-color: rgba(255, 180, 84, 0.4); }
 .chip-off  { color: var(--text-dim); }
 .chip-bad  { color: var(--danger); border-color: rgba(255, 93, 108, 0.4); }
+
+/* ---------- manage dialog ---------- */
+
+.manage-chip { cursor: pointer; }
+.manage-chip:hover { border-color: var(--accent); color: var(--accent); }
+
+#manageDialog {
+  border: 1px solid var(--card-border);
+  border-radius: var(--radius);
+  background: var(--card);
+  color: var(--text);
+  padding: 20px 24px;
+  max-width: 560px;
+  width: calc(100% - 48px);
+}
+#manageDialog::backdrop { background: rgba(0, 0, 0, 0.45); }
+.manage-header { display: flex; justify-content: space-between; align-items: center; margin-bottom: 8px; }
+.manage-header h3 { margin: 0; font-size: 17px; }
+#manageDialog .hint { margin-bottom: 16px; }
+
+.manage-row {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 12px 14px;
+  border: 1px solid var(--card-border);
+  border-radius: 10px;
+  margin-bottom: 8px;
+}
+.manage-row.active { border-color: var(--accent); background: rgba(56, 225, 255, 0.06); }
+.manage-row.inactive { opacity: 0.55; }
+.manage-name { font-weight: 600; flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.manage-status { font-size: 12px; white-space: nowrap; color: var(--text-dim); }
+.manage-status.manage-live { color: var(--accent-2); }
+.manage-status.manage-sleep { color: var(--warn); }
+.manage-use { width: auto; }
+
+.empty-note { padding: 14px; text-align: center; color: var(--text-dim); }
 
 /* ---------- banner ---------- */
 
