@@ -79,6 +79,13 @@ jobs:
             sudo mv gh_2.62.0_linux_amd64/bin/gh /usr/local/bin/ || mv gh_2.62.0_linux_amd64/bin/gh /usr/local/bin/
           fi
 
+          # 既存のReleaseがあればアセットを全部削除
+          if gh release view "$TAG" --repo sktdr-chan/sktdr-mouse &>/dev/null; then
+            gh release view "$TAG" --repo sktdr-chan/sktdr-mouse --json assets -q '.assets[].name' | while read asset; do
+              gh release delete-asset "$TAG" "$asset" --repo sktdr-chan/sktdr-mouse --yes || true
+            done
+          fi
+
           gh release create "$TAG" \
             --repo sktdr-chan/sktdr-mouse \
             --title "$TAG" \
