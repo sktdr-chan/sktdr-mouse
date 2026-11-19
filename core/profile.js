@@ -34,9 +34,12 @@ function validateProfile(p, file) {
   const isMoji = p.transport.type === 'moji64';
   const isHidpp = p.transport.type === 'hidpp';
   const isRazer = p.transport.type === 'razer';
-  const isCommandFrame = isMoji || isHidpp || isRazer;
+  const isNgenuity = p.transport.type === 'ngenuity64';
+  const isNgenuityUniversal = p.transport.type === 'ngenuityUniversal';
+  const isCommandFrame = isMoji || isHidpp || isRazer || isNgenuity || isNgenuityUniversal;
   // sequence-style profiles (ROCCAT Swarm), MOJI (Darmoshark), HID++
-  // (Logitech) and Razer feature-report profiles don't use the hid16 layout
+  // (Logitech), Razer feature-report and HyperX NGenuity2 profiles don't use
+  // the hid16 layout
   if (!p.applySequence && !isCommandFrame && !p.transport.layout) {
     throw new ProfileError('transport.layout がありません', file);
   }
@@ -48,8 +51,8 @@ function validateProfile(p, file) {
   for (const name of ['readFlash', 'writeFlash']) {
     // only flash-mapped (hid16) profiles need direct flash commands;
     // sequence-style profiles (ROCCAT Swarm) use applySequence, MOJI
-    // profiles read whole frames via commandImages, HID++ and Razer
-    // profiles call per-setting commands/features instead.
+    // profiles read whole frames via commandImages, HID++, Razer and
+    // NGenuity2 profiles call per-setting commands/features instead.
     if (p.applySequence || isCommandFrame) continue;
     if (!p.commands[name] || p.commands[name].id == null) {
       throw new ProfileError(`commands.${name}.id がありません`, file);

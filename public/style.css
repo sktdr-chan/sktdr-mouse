@@ -339,6 +339,7 @@ html, body {
 }
 
 .hint { color: var(--text-dim); font-size: 12.5px; margin: 8px 0 0; }
+#protocolSource { overflow-wrap: anywhere; }
 
 /* ---------- key-value grid ---------- */
 

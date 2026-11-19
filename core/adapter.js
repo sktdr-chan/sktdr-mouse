@@ -95,8 +95,36 @@ class MouseAdapter {
     // ROCCAT Swarm-style devices keep their configuration in the mouse and
     // cannot be read back — the adapter maintains a host-side cache instead,
     // seeded from the profile defaults and persisted to data/<id>.json.
-    if (profile.applySequence) {
+    // HyperX NGenuity2 is also partly write-only (DPI/polling), so it uses
+    // the same cache mechanism.
+    if (profile.applySequence || profile.protocol === 'ngenuity2') {
       this.cache = this._loadCache();
+    }
+
+    if (profile.protocol === 'ngenuity-universal') {
+      this.nguDpi = null;
+      this.nguSensor = null;
+      this.nguBrightRaw = 0xff;
+      this.nguLight = { mode: 1, duration: 50, colors: [[255, 255, 255]] };
+      this.nguLastColor = [255, 255, 255];
+    }
+
+    if (profile.protocol === 'ngenuity2') {
+      // The mouse emits FF 03 <profile> <cable> … when the DPI/profile button
+      // is pressed; keep the cached active stage in sync.
+      this.tr.onEvent((type, data) => {
+        if (type !== 'ngenuityState' || !data) return;
+        if (Number.isInteger(data.profile)) {
+          this.cache.activeStage = Math.max(0, Math.min(4, data.profile));
+          this._saveCache();
+          this.parseAll();
+          this.emit('config', this.config);
+        }
+        if (typeof data.charging === 'boolean' && this.battery) {
+          this.battery.charging = data.charging;
+          this.emit('battery', this.battery);
+        }
+      });
     }
 
     // flatten settings/actions for dispatch + prebuild codecs
@@ -161,6 +189,10 @@ class MouseAdapter {
     if (this.tr.type === 'moji64' || this.tr.type === 'hidpp' || this.tr.type === 'razer') {
       // responses are matched/validated at the transport layer (type+sub,
       // feature+fn, or status+class+cmd); error frames never reach here.
+      return !!pkt;
+    }
+    if (this.tr.type === 'ngenuityUniversal') {
+      // transport matched either the real reply or the dongle ACK
       return !!pkt;
     }
     return pkt && pkt[this.tr.L.status] === 0;
@@ -255,6 +287,8 @@ class MouseAdapter {
   }
 
   async _afterOnlineInit() {
+    if (this.profile.protocol === 'ngenuity-universal') return this._nguInit();
+    if (this.profile.protocol === 'ngenuity2') return this._ngInit();
     // handshake identifies CID/MID/connection type — optional per family
     if (this.profile.commands.handshake) {
       const rnd = crypto.randomBytes(num((this.profile.commands.handshake || {}).randomDataLength, 4));
@@ -344,6 +378,23 @@ class MouseAdapter {
 
   // ------------------------------------------------------ config image ----
   async refreshConfig() {
+    if (this.profile.protocol === 'ngenuity-universal') {
+      await this._nguReadDpi().catch(() => {});
+      await this._nguReadSensor().catch(() => {});
+      await this._nguReadBrightness().catch(() => {});
+      await this._nguReadLighting().catch(() => {});
+      await this.getBattery().catch(() => {});
+      this.parseAll();
+      this.emit('config', this.config);
+      return this.config;
+    }
+    if (this.profile.protocol === 'ngenuity2') {
+      await this._ngReadLed().catch(() => {});
+      await this.getBattery().catch(() => {});
+      this.parseAll();
+      this.emit('config', this.config);
+      return this.config;
+    }
     // Swarm-style devices cannot be read back — poll the battery to confirm
     // the device is alive, then serve the host cache as the truth.
     if (this.profile.applySequence) {
@@ -421,6 +472,31 @@ class MouseAdapter {
 
   /** Parse this.image (or the host cache) into this.config using profile descriptors (no IO). */
   parseAll() {
+    if (this.profile.protocol === 'ngenuity-universal') {
+      const cfg = {};
+      const rateToHz = { 0x40: 125, 0x20: 250, 0x10: 500, 0x08: 1000 };
+      const d = this.nguDpi;
+      if (d) {
+        cfg.dpi = {
+          count: d.count,
+          current: d.active,
+          records: d.stages.map((st) => ({ value: st.dpi, color: st.color })),
+        };
+        cfg.polling = rateToHz[d.rateCode] || null;
+      }
+      if (this.nguSensor) cfg.lod = this.nguSensor[3] === 2 ? 2 : 1;
+      cfg.brightness = Math.round(((this.nguBrightRaw || 0) * 100) / 255);
+      if (this.nguLight) {
+        const mode = this.nguLight.mode === 6 ? 1 : this.nguLight.mode;
+        cfg.light = {
+          effect: [0, 1, 2, 4].includes(mode) ? mode : 1,
+          color: this.nguLight.colors[0] || this.nguLastColor || [255, 255, 255],
+          speed: this.nguLight.duration || 0,
+        };
+      }
+      this.config = cfg;
+      return;
+    }
     const cfg = {};
     for (const sec of (this.profile.ui && this.profile.ui.sections) || []) {
       for (const s of sec.settings || []) {
@@ -441,12 +517,15 @@ class MouseAdapter {
         const n = num(s.maxRecords, 8);
         const records = [];
         for (let i = 1; i <= n; i++) {
-          const v = num(this.cache[`dpi${i}`], 0);
-          records.push({ value: v });
+          const rec = { value: num(this.cache[`dpi${i}`], 0) };
+          const color = this.cache[`dpiColor${i}`];
+          if (Array.isArray(color) && color.length >= 3) rec.color = color;
+          records.push(rec);
         }
-        const count = records.filter((r) => r.value > 0).length;
+        const nonZero = records.filter((r) => r.value > 0).length;
+        const count = Math.max(1, Math.min(num(this.cache.dpiCount, nonZero || n), n));
         cfg[s.key] = {
-          count: count || n,
+          count,
           current: num(this.cache.activeStage, 0),
           records,
         };
@@ -539,6 +618,17 @@ class MouseAdapter {
     if (!s) throw new AdapterError(`未知の設定: ${key}`, 'unknown-setting');
     if (!this.online) {
       throw new AdapterError('マウスがオフラインです。マウスを動かしてスリープを解除してください。', 'offline');
+    }
+
+    // HyperX NGENUITY 3.x universal protocol (Pulsefire Haste 2 Wireless):
+    // settings are read from the table commands, no host cache is needed.
+    if (this.profile.protocol === 'ngenuity-universal') {
+      return this._nguApply(s, args);
+    }
+
+    // HyperX NGenuity2: per-command writes + host cache for write-only values.
+    if (this.profile.protocol === 'ngenuity2') {
+      return this._ngApply(s, args);
     }
 
     // ROCCAT Swarm-style: update the host cache, then replay the full
@@ -838,6 +928,459 @@ class MouseAdapter {
     return this.config;
   }
 
+  // ------------------------------------------------ NGenuity2 (HyperX) ---
+  // 64-byte request/response frames, command in byte 0. Writes (D0/D2/D3/DE)
+  // are acknowledged by echoing the command; DPI and polling have no read
+  // command, so their values live in the host cache like ROCCAT profiles.
+  async _ngSend(cmd, payload = [], opts = {}) {
+    const p = Buffer.alloc(num(this.tr.packetLength, 64), 0);
+    p[0] = cmd & 0xff;
+    for (let i = 0; i < payload.length && i + 1 < p.length; i++) {
+      p[1 + i] = payload[i] & 0xff;
+    }
+    return this.tr.command(p, { timeout: 400, retries: 2, ...opts });
+  }
+
+  async _ngInfo() {
+    const r = await this._ngSend(0x50, [], { timeout: 300, retries: 2 });
+    const pid = (r[5] << 8) | r[4];
+    const vid = (r[7] << 8) | r[6];
+    const version = `v${r[11]}.${r[10]}.${r[9]}.${r[8]}`;
+    this.ngInfo = { vid, pid, version };
+    this.mouseVersion = version;
+    return this.ngInfo;
+  }
+
+  async _ngReadLed() {
+    const r = await this._ngSend(0x52, [], { timeout: 300, retries: 2 });
+    this.cache.light = {
+      effect: num(r[4], 0),
+      color: [num(r[8], 0), num(r[9], 0), num(r[10], 0)],
+      brightness: num(r[7], 0),
+      speed: num(r[14], 0),
+    };
+    return this.cache.light;
+  }
+
+  /** Persist the current settings in the mouse's onboard memory. */
+  async _ngSave() {
+    await this._ngSend(0xde, [0xff], { timeout: 250, retries: 1 }).catch(() => {});
+  }
+
+  async _ngInit() {
+    await this._ngInfo().catch(() => {});
+    await this._ngReadLed().catch(() => {});
+    await this.getBattery().catch(() => {});
+    this.parseAll();
+    this.emit('config', this.config);
+  }
+
+  async _ngApply(s, args = {}) {
+    if (s.type === 'dpiStages') {
+      const n = num(s.maxRecords, 5);
+      const vr = s.valueRange || {};
+      const min = num(vr.min, 200);
+      const max = num(vr.max, 16000);
+      const step = num(vr.step, 50);
+      switch (args.op) {
+        case 'count': {
+          const v = num(args.value, -1);
+          if (!Number.isInteger(v) || v < 1 || v > n) {
+            throw new AdapterError(`ステージ数は1〜${n}です`, 'bad-args');
+          }
+          this.cache.dpiCount = v;
+          await this._ngSend(0xd3, [0x01, 0x00, 0x01, (1 << v) - 1]);
+          break;
+        }
+        case 'current': {
+          const v = num(args.value, -1);
+          if (!Number.isInteger(v) || v < 0 || v > n - 1) {
+            throw new AdapterError(`ステージ番号は0〜${n - 1}です`, 'bad-args');
+          }
+          this.cache.activeStage = v;
+          await this._ngSend(0xd3, [0x00, 0x00, 0x01, v]);
+          break;
+        }
+        case 'stageValue': {
+          const idx = num(args.index, -1);
+          const dpi = num(args.value, NaN);
+          if (!Number.isInteger(idx) || idx < 0 || idx > n - 1) {
+            throw new AdapterError(`ステージ番号は0〜${n - 1}です`, 'bad-args');
+          }
+          if (!Number.isInteger(dpi) || dpi < min || dpi > max || dpi % step !== 0) {
+            throw new AdapterError(`DPIは${min}〜${max}の範囲で${step}刻みです`, 'bad-args');
+          }
+          this.cache[`dpi${idx + 1}`] = dpi;
+          const q = Math.round(dpi / 50);
+          await this._ngSend(0xd3, [0x02, 0x00, 0x02, q & 0xff, (q >> 8) & 0xff]);
+          break;
+        }
+        case 'stageColor': {
+          const idx = num(args.index, -1);
+          if (!Number.isInteger(idx) || idx < 0 || idx > n - 1) {
+            throw new AdapterError(`ステージ番号は0〜${n - 1}です`, 'bad-args');
+          }
+          if (!Array.isArray(args.color) || args.color.length < 3) {
+            throw new AdapterError('カラーが不正です', 'bad-args');
+          }
+          const rgb = args.color.slice(0, 3).map((x) => num(x, 0) & 0xff);
+          this.cache[`dpiColor${idx + 1}`] = rgb;
+          await this._ngSend(0xd3, [0x03, idx, 0x03, ...rgb]);
+          break;
+        }
+        default:
+          throw new AdapterError(`不明なDPI操作: ${args.op}`, 'bad-args');
+      }
+    } else if (s.key === 'polling') {
+      const hz = num(args.value, NaN);
+      const code = { 125: 0, 250: 1, 500: 2, 1000: 3 }[hz];
+      if (code == null) {
+        throw new AdapterError('ポーリングレートは125/250/500/1000Hzです', 'bad-args');
+      }
+      this.cache.pollingHz = hz;
+      await this._ngSend(0xd0, [0x00, 0x00, 0x01, code]);
+    } else if (s.type === 'group' && args.field != null) {
+      if (!this.cache.light) {
+        this.cache.light = { effect: 0, color: [255, 255, 255], brightness: 100, speed: 0 };
+      }
+      const led = this.cache.light;
+      const field = args.field;
+      if (field === 'effect') {
+        led.effect = num(args.value, 0) & 0xff;
+      } else if (field === 'brightness') {
+        led.brightness = Math.max(0, Math.min(100, num(args.value, 0)));
+      } else if (field === 'speed') {
+        led.speed = Math.max(0, Math.min(100, num(args.value, 0)));
+      } else if (field === 'color') {
+        if (!Array.isArray(args.value) || args.value.length < 3) {
+          throw new AdapterError('カラーが不正です', 'bad-args');
+        }
+        led.color = args.value.slice(0, 3).map((x) => num(x, 0) & 0xff);
+      } else {
+        throw new AdapterError(`未知のライト設定: ${field}`, 'bad-args');
+      }
+      const [r, g, b] = led.color;
+      await this._ngSend(0xd2, [
+        0x00,
+        led.effect,
+        0x08,
+        r,
+        g,
+        b,
+        r,
+        g,
+        b,
+        led.brightness,
+        led.speed,
+      ]);
+    } else {
+      throw new AdapterError(`設定 ${s.key} の書き込み方法が定義されていません`, 'bad-args');
+    }
+
+    await this._ngSave();
+    this._saveCache();
+    this.parseAll();
+    this.emit('config', this.config);
+    return this.config;
+  }
+
+  // ------------------------------------ NGenuity universal (Haste 2) ---
+  // 64-byte packets: report ID == command, byte 1 == sub-command. Replies use
+  // report ID command+1; the dongle also ACKs every packet with FF 01 …
+  // Unlike NGenuity2, DPI/polling/LOD/brightness/lighting are all readable.
+  async _nguSend(cmd, sub, payload = [], opts = {}) {
+    const { expectReply = false, timeout = 700, retries = 2 } = opts;
+    const p = Buffer.alloc(num(this.tr.packetLength, 64), 0);
+    p[0] = cmd & 0xff;
+    p[1] = sub & 0x3f;
+    for (let i = 0; i < payload.length && i + 2 < p.length; i++) {
+      p[2 + i] = payload[i] & 0xff;
+    }
+    const res = await this.tr.command(p, { timeout, retries, expectReply });
+    await sleep(12); // NGENUITY paces packets by at least 10 ms
+    return res;
+  }
+
+  _nguSetVersion() {
+    const r = num(this.meta && this.meta.release, 0);
+    if (r) {
+      this.mouseVersion = `v${(r >> 12) & 0xf}.${(r >> 8) & 0xf}.${(r >> 4) & 0xf}.${r & 0xf}`;
+    }
+  }
+
+  async _nguBattery() {
+    const r = await this._nguSend(0x50, 0x02, [], { expectReply: true });
+    const level = r[2] & 0xff;
+    const status = r[3] & 0xff;
+    const voltage = (r[6] | (r[7] << 8)) || null;
+    this.battery = {
+      level,
+      charging: status === 1 || status === 2,
+      voltage,
+    };
+    return this.battery;
+  }
+
+  async _nguReadDpi(slot = 0) {
+    const r = await this._nguSend(
+      0x32,
+      0x02,
+      [slot & 0xff, (slot >> 8) & 0xff],
+      { expectReply: true }
+    );
+    const stages = [];
+    for (let i = 0; i < 5; i++) {
+      const off = 5 + i * 5;
+      const code = r[off] | (r[off + 1] << 8);
+      stages.push({
+        dpi: (code + 1) * 50,
+        color: [r[off + 2], r[off + 3], r[off + 4]],
+      });
+    }
+    const mask = r[3] & 0xff;
+    let count = 1;
+    for (let i = 0; i < 5; i++) if (mask & (1 << i)) count = i + 1;
+    this.nguDpi = {
+      rateCode: r[2] & 0xff,
+      mask,
+      active: Math.min(r[4] & 0xff, 4),
+      stages,
+      count,
+    };
+    return this.nguDpi;
+  }
+
+  _nguDpiPayload(slot) {
+    const d = this.nguDpi;
+    const p = [slot & 0xff, (slot >> 8) & 0xff, d.rateCode, (1 << d.count) - 1, d.active & 0xff];
+    for (let i = 0; i < 5; i++) {
+      const st = d.stages[i];
+      const code = Math.max(0, Math.round(st.dpi / 50) - 1);
+      p.push(code & 0xff, (code >> 8) & 0xff, ...st.color);
+    }
+    return p;
+  }
+
+  async _nguWriteDpi() {
+    for (const slot of [0, 1]) {
+      await this._nguSend(0x32, 0x01, this._nguDpiPayload(slot), { expectReply: false });
+    }
+  }
+
+  async _nguReadSensor(slot = 0) {
+    const r = await this._nguSend(
+      0x36,
+      0x02,
+      [slot & 0xff, (slot >> 8) & 0xff],
+      { expectReply: true }
+    );
+    this.nguSensor = [r[2] & 0xff, r[3] & 0xff, r[4] & 0xff, r[5] & 0xff, r[6] & 0xff];
+    return this.nguSensor;
+  }
+
+  async _nguWriteSensor() {
+    const s = this.nguSensor || [0, 0, 0, 0, 0];
+    for (const slot of [0, 1]) {
+      await this._nguSend(
+        0x36,
+        0x01,
+        [slot & 0xff, (slot >> 8) & 0xff, ...s],
+        { expectReply: false }
+      );
+    }
+  }
+
+  async _nguReadBrightness() {
+    const r = await this._nguSend(0x40, 0x02, [0, 0], { expectReply: true });
+    this.nguBrightRaw = r[2] & 0xff;
+    return this.nguBrightRaw;
+  }
+
+  async _nguWriteBrightness(raw) {
+    for (const slot of [0, 1]) {
+      await this._nguSend(0x40, 0x01, [slot & 0xff, (slot >> 8) & 0xff, raw & 0xff], {
+        expectReply: false,
+      });
+    }
+  }
+
+  async _nguReadLighting() {
+    const r = await this._nguSend(0x42, 0x03, [0, 0], { expectReply: true });
+    const mode = r[2] & 0xff;
+    const duration = (r[3] | (r[4] << 8)) & 0xff;
+    const colorType = r[6] & 0xff;
+    const colors = [];
+    if (colorType >= 1 && colorType <= 3) {
+      let off = 7;
+      for (let i = 0; i < colorType; i++) {
+        colors.push([r[off], r[off + 1], r[off + 2]]);
+        off += 3;
+      }
+    }
+    this.nguLight = { mode, duration, colorType, colors };
+    if (colors.length) this.nguLastColor = colors[0];
+    return this.nguLight;
+  }
+
+  async _nguApplyLighting() {
+    const l = this.nguLight;
+    // mode 6 (FrameLight) is the stored solid colour; treat it as Solid when
+    // the user changes the colour/speed.
+    const mode = l.mode === 6 ? 1 : l.mode;
+    const color = this.nguLastColor || [255, 255, 255];
+    const dur = (l.duration || 50) & 0xff;
+    if (mode === 1) {
+      // Solid: live colour + a 1-frame FrameLight to slots 0 and 1.
+      await this._nguSend(0x44, 0x02, [0, 0, ...color], { expectReply: true });
+      for (const slot of [0, 1]) {
+        await this._nguSend(
+          0x44,
+          0x03,
+          [1, 1, 0, slot & 0xff, (slot >> 8) & 0xff, 0],
+          { expectReply: false }
+        );
+        await this._nguSend(0x44, 0x04, [0, 0, ...color], { expectReply: true });
+        await this._nguSend(
+          0x42,
+          0x02,
+          [slot & 0xff, (slot >> 8) & 0xff, 6, dur, 0],
+          { expectReply: true }
+        );
+      }
+    } else if (mode === 0) {
+      for (const slot of [0, 1]) {
+        await this._nguSend(0x42, 0x02, [slot & 0xff, (slot >> 8) & 0xff, 0], {
+          expectReply: true,
+        });
+      }
+    } else if (mode === 2) {
+      for (const slot of [0, 1]) {
+        await this._nguSend(
+          0x42,
+          0x02,
+          [slot & 0xff, (slot >> 8) & 0xff, 2, dur, 0, 0, 1, ...color],
+          { expectReply: true }
+        );
+      }
+    } else if (mode === 4) {
+      for (const slot of [0, 1]) {
+        await this._nguSend(
+          0x42,
+          0x02,
+          [slot & 0xff, (slot >> 8) & 0xff, 4, dur, 0, 0, 0xfe],
+          { expectReply: true }
+        );
+      }
+    } else {
+      throw new AdapterError(`不明なライトモード: ${mode}`, 'bad-args');
+    }
+  }
+
+  async _nguInit() {
+    this._nguSetVersion();
+    await this._nguReadDpi().catch(() => {});
+    await this._nguReadSensor().catch(() => {});
+    await this._nguReadBrightness().catch(() => {});
+    await this._nguReadLighting().catch(() => {});
+    await this._nguBattery().catch(() => {});
+    this.parseAll();
+    this.emit('config', this.config);
+  }
+
+  async _nguApply(s, args = {}) {
+    if (s.type === 'dpiStages') {
+      if (!this.nguDpi) await this._nguReadDpi();
+      const d = this.nguDpi;
+      switch (args.op) {
+        case 'count': {
+          const v = num(args.value, -1);
+          if (!Number.isInteger(v) || v < 1 || v > 5) {
+            throw new AdapterError('ステージ数は1〜5です', 'bad-args');
+          }
+          d.count = v;
+          d.mask = (1 << v) - 1;
+          if (d.active >= v) d.active = 0;
+          break;
+        }
+        case 'current': {
+          const v = num(args.value, -1);
+          if (!Number.isInteger(v) || v < 0 || v > d.count - 1) {
+            throw new AdapterError(`ステージ番号は0〜${d.count - 1}です`, 'bad-args');
+          }
+          d.active = v;
+          break;
+        }
+        case 'stageValue': {
+          const idx = num(args.index, -1);
+          const dpi = num(args.value, NaN);
+          if (!Number.isInteger(idx) || idx < 0 || idx > 4) {
+            throw new AdapterError('ステージ番号は0〜4です', 'bad-args');
+          }
+          if (!Number.isInteger(dpi) || dpi < 200 || dpi > 26000 || dpi % 50 !== 0) {
+            throw new AdapterError('DPIは200〜26000の範囲で50刻みです', 'bad-args');
+          }
+          d.stages[idx].dpi = dpi;
+          break;
+        }
+        case 'stageColor': {
+          const idx = num(args.index, -1);
+          if (!Number.isInteger(idx) || idx < 0 || idx > 4) {
+            throw new AdapterError('ステージ番号は0〜4です', 'bad-args');
+          }
+          if (!Array.isArray(args.color) || args.color.length < 3) {
+            throw new AdapterError('カラーが不正です', 'bad-args');
+          }
+          d.stages[idx].color = args.color.slice(0, 3).map((x) => num(x, 0) & 0xff);
+          break;
+        }
+        default:
+          throw new AdapterError(`不明なDPI操作: ${args.op}`, 'bad-args');
+      }
+      await this._nguWriteDpi();
+      await this._nguReadDpi().catch(() => {});
+    } else if (s.key === 'polling') {
+      if (!this.nguDpi) await this._nguReadDpi();
+      const code = { 125: 0x40, 250: 0x20, 500: 0x10, 1000: 0x08 }[num(args.value, NaN)];
+      if (code == null) {
+        throw new AdapterError('ポーリングレートは125/250/500/1000Hzです', 'bad-args');
+      }
+      this.nguDpi.rateCode = code;
+      await this._nguWriteDpi();
+      await this._nguReadDpi().catch(() => {});
+    } else if (s.key === 'lod') {
+      if (!this.nguSensor) await this._nguReadSensor();
+      this.nguSensor[3] = num(args.value, 1) === 2 ? 2 : 0;
+      await this._nguWriteSensor();
+    } else if (s.key === 'brightness') {
+      const pct = Math.max(0, Math.min(100, num(args.value, 0)));
+      this.nguBrightRaw = Math.round((pct * 255) / 100);
+      await this._nguWriteBrightness(this.nguBrightRaw);
+    } else if (s.type === 'group' && args.field != null) {
+      if (!this.nguLight) this.nguLight = { mode: 1, duration: 50, colors: [] };
+      if (args.field === 'effect') {
+        this.nguLight.mode = num(args.value, 1);
+      } else if (args.field === 'color') {
+        if (!Array.isArray(args.value) || args.value.length < 3) {
+          throw new AdapterError('カラーが不正です', 'bad-args');
+        }
+        this.nguLastColor = args.value.slice(0, 3).map((x) => num(x, 0) & 0xff);
+        this.nguLight.colors = [this.nguLastColor];
+      } else if (args.field === 'speed') {
+        this.nguLight.duration = Math.max(0, Math.min(255, num(args.value, 50)));
+      } else {
+        throw new AdapterError(`未知のライト設定: ${args.field}`, 'bad-args');
+      }
+      await this._nguApplyLighting();
+      await this._nguReadLighting().catch(() => {});
+    } else {
+      throw new AdapterError(`設定 ${s.key} の書き込み方法が定義されていません`, 'bad-args');
+    }
+
+    this.parseAll();
+    this.emit('config', this.config);
+    return this.config;
+  }
+
   /** Replay the profile's fixed apply sequence, byte-identical to the driver.
    *  Preamble/postfix entries may also carry {field} template tokens — e.g.
    *  the Eco-mode byte inside the 10 72 command. */
@@ -865,7 +1408,10 @@ class MouseAdapter {
   }
 
   _loadCache() {
-    const defaults = (this.profile.applySequence && this.profile.applySequence.defaults) || {};
+    const defaults =
+      (this.profile.applySequence && this.profile.applySequence.defaults) ||
+      this.profile.defaults ||
+      {};
     try {
       const raw = JSON.parse(fs.readFileSync(this._cachePath(), 'utf8'));
       return { ...defaults, ...raw };
@@ -989,6 +1535,9 @@ class MouseAdapter {
 
   // ------------------------------------------------------------ getters ---
   async getBattery() {
+    if (this.profile.protocol === 'ngenuity-universal') {
+      return this._nguBattery();
+    }
     const res = await this._cmd('battery', { timeout: 300, retries: 2 });
     this._requireOk(res, 'バッテリー情報の取得');
     const def = this.profile.commands.battery || {};

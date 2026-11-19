@@ -1,4 +1,4 @@
-# sktdr-mouse — プロファイル駆動・5プロトコルファミリー対応
+# sktdr-mouse — プロファイル駆動・7プロトコルファミリー対応
 
 プロファイル駆動型のマウス設定ソフトウェアです。**本体（core）はマウス非依存**で、
 マウス固有の知識はすべて `devices/` 内のJSONプロファイルに記述されます。
@@ -18,6 +18,8 @@
 | **Logitech G PRO X Wireless** (VID 0x046D) | Lightspeedレシーバー (PID 0xC547) | **HID++ 2.0**（機能インデックス解決＋20バイト長報告）。DPI・レートはホストモードでライブ適用 |
 | **Razer DeathAdder V3 Pro** (VID 0x1532, 有線) | USB有線 | **Razer 90バイトfeatureレポート**（openrazerプロトコル）。DPIステージ・レート・スリープ時間を即時適用・永続化 |
 | **ROCCAT Kone Pro Air** (有線, VID 0x1E7D) | USB有線 | Swarm通信をキャプチャ解析した12コマンド適用シーケンス |
+| **HyperX Pulsefire Haste Wireless** (VID 0x03F0, PID 0x028E) | 2.4GHzドングル | HyperX NGenuity2（64バイト・レポートID 0）。LED・バッテリーは読み取り、DPI・ポーリングレートは書き込み専用（ホスト側キャッシュ） |
+| **HyperX Pulsefire Haste 2 Wireless** (VID 0x03F0, PID 0x0F98 / 0x0D97) | 2.4GHzドングル | **NGENUITY 3.x universal**（64バイト・レポートID=コマンド）。DPI・ポーリング・LOD・明るさ・LEDを読み書き |
 
 > Compx系の詳細（作者が実機確認したモデル／動作する可能性が高いモデル／別プロトコル機種）は
 > 下の「Compx系の対応状況」を参照してください。
@@ -100,6 +102,8 @@ Compx系チップ（VID `0x3554`）は**同じVIDでも複数のプロトコル*
 | Logitech G PRO X Wireless | **HID++ 2.0公開仕様 + コミュニティ実装**（`research/logitech-hidpp.md` に全記録）。参照: [pwr-Solaar/Solaar](https://github.com/pwr-Solaar/Solaar) (GPL) — `hidpp20_constants.py` の機能ID表と `settings_templates.py` のファンクション番号・応答レイアウト（一次情報源）、[libratbag/libratbag](https://github.com/libratbag/libratbag) (MIT) — ONBOARD PROFILES構造、[Ad1FPS/Featherweight](https://github.com/Ad1FPS/Featherweight) (MIT) — ワイヤー形式（レポートID 0x11・swId・エラーフレーム処理）の確認源 |
 | Razer DeathAdder V3 Pro | **openrazer (GPL-2.0)** — `driver/razercommon.c`（レポート形式・CRC・応答status）、`driver/razerchromacommon.c`（コマンド定義）、`driver/razermouse_driver.c`（機種別コマンド選択・transaction id）。本実装はopenrazerをプロトコル文書として参照する独立実装 |
 | ROCCAT Kone Pro Air | **独自リバースエンジニアリング**（ROCCAT Swarm ↔ 本機のUSB通信キャプチャ、`research/roccat-kone-pro-air.md` に全記録）。参照: [Tobbesson/roccat-konepro-linux](https://github.com/Tobbesson/roccat-konepro-linux)（兄弟機のDPI÷50エンコード）、[mattiasdjarv/kone-battery](https://github.com/mattiasdjarv/kone-battery)（ドングルの90 0Aバッテリーパケット）、[FortisVoluntas/roccat-burst-pro-air-linux-tool](https://github.com/FortisVoluntas/roccat-burst-pro-air-linux-tool)（解析手法の参照元） |
+| HyperX Pulsefire Haste Wireless | **[santeri3700/hyperx_pulsefire_dart_reverse_engineering](https://github.com/santeri3700/hyperx_pulsefire_dart_reverse_engineering)** (CC0) — NGenuity2プロトコル資料（D0〜D6 / DE / 50 / 51 / 52）。Haste Wireless実機 (03f0:028e) で読み取りとACKを確認し、DPI (D3) は同レイアウトで実装（`research/hyperx-pulsefire-haste-wireless.md`） |
+| HyperX Pulsefire Haste 2 Wireless | **[PMarinov1994/ngenuity-linux-cli](https://github.com/PMarinov1994/ngenuity-linux-cli)** (MIT) — NGENUITY 3.1.0の通信ハブを解析したuniversalプロトコル資料（DPI / LED / LOD / バッテリー / ライブカラー / FrameLight）。[HaloBattery protocols.md](https://github.com/HeyOkay/HaloBattery/blob/main/docs/protocols.md#hyperx-pulsefire-haste-2-wireless-ngenuity-protocol) も参照（`research/hyperx-pulsefire-haste-2-wireless.md`） |
 
 > 出典仕様と実機の差分（メインライト輝度がテーブル変換なしの生値0〜255である点など）は
 > `HANDOFF_PROMPT.md` §10 にまとめています。
@@ -193,18 +197,20 @@ server.js                HTTP+SSEサーバー (localhost:3554) — マウス非�
 core/
   profile.js             devices/*.json のロード・検証
   manager.js             複数デバイスの管理、プロファイル⇔実機マッチング、ホットプラグ
-  transport.js           HID送受信（キュー・再送・チェックサム）— 5形式: hid16 / swarmEcho64 / moji64 / hidpp / razer
-  adapter.js             設定の読み書きエンジン＋シーケンス適用＋MOJI/HID++/Razerフレーム適用＋ホスト側キャッシュ
+  transport.js           HID送受信（キュー・再送・チェックサム）— 7形式: hid16 / swarmEcho64 / moji64 / hidpp / razer / ngenuity64 / ngenuityUniversal
+  adapter.js             設定の読み書きエンジン＋シーケンス適用＋MOJI/HID++/Razer/NGenuity2フレーム適用＋ホスト側キャッシュ
   codec.js               値のコーデック（byte/bool/enum/rgb/dpi/dpiXY/le16/dpiLeXY/stagesMask/bit/dpiBeXY4/oneBased…）
 devices/
   compx-generic.json     Compx系汎用（Scyrox V8/V6・Lamzu Maya・VXE R1 Pro Max等を1ファイルでカバー）
   darmoshark-m5.json     Darmoshark M5（MOJIコマンドフレーム方式）
+  hyperx-pulsefire-haste-wireless.json  HyperX NGenuity2（64バイト・レポートID 0。DPI/ポーリングはホストキャッシュ）
+  hyperx-pulsefire-haste-2-wireless.json  HyperX NGENUITY universal（64バイト・レポートID=コマンド）
   logitech-pro-x-wireless.json  Logitech G PRO X Wireless（HID++ 2.0機能呼び出し方式）
   razer-deathadder-v3-pro.json  Razer DeathAdder V3 Pro（90バイトfeatureレポート方式）
   roccat-kone-pro-air.json  ROCCAT Kone Pro Air（Swarmシーケンス方式）
   vxe-mad-r-major.json   VXE MAD R Major（ページ方式フラッシュ）
 data/
-  <profileId>.json       Swarm方式機のホスト側設定キャッシュ（自動生成）
+  <profileId>.json       ホスト側設定キャッシュ（Swarm方式・HyperXの書き込み専用設定など。自動生成）
 public/                  UI — プロファイルのスキーマから画面を自動生成・デバイス切替
 scripts/
   build-dist.js         配布版（Electronフォルダ＋ZIP＋SHA256）のビルド
@@ -214,6 +220,7 @@ scripts/
   probe-darmoshark*.js   Darmoshark診断（1〜14: 探索→全コマンド検証の段階的記録）
   probe-superlight*.js   Logitech HID++診断（探索→DPI/レート書き込み検証）
   probe-razer*.js        Razer診断（featureレポート探索→レート/DPI/アイドル書き込み検証）
+  probe-hyperx.js        HyperX NGenuity2診断（読み取り／--write-testはD0/D2/DEのみ）
   probe-philips*.js      Philips Evnia診断（未解明プロトコルの探索記録）
   dump-hid-caps.ps1      HIDレポートディスクリプタ解析
   capture-roccat.ps1     USBPcapキャプチャ制御（RE用）
@@ -222,6 +229,8 @@ research/
   roccat-kone-pro-air.md ROCCAT解析の完全記録
   darmoshark-m5.md       Darmoshark解析の完全記録
   logitech-hidpp.md      Logitech HID++解析の完全記録
+  hyperx-pulsefire-haste-wireless.md  HyperX NGenuity2解析の記録
+  hyperx-pulsefire-haste-2-wireless.md  HyperX NGENUITY universal解析の記録
   philips-spk9418.md     Philips Evnia解析の記録（未解明・調査再開用メモ）
 HANDOFF_PROMPT.md        他言語で再実装するための完全仕様（引継ぎ用プロンプト）
 ```
@@ -272,7 +281,7 @@ HANDOFF_PROMPT.md        他言語で再実装するための完全仕様（引�
 
 本ソフトは個人（sktdr）が開発した**非公式**ツールです。全文は **[DISCLAIMER.md](DISCLAIMER.md)** を参照してください。
 
-- **非提携**: Razer / VXE / Compx / Scyrox / Lamzu / Logitech / ROCCAT / Darmoshark / ATK / Pulsar / Kysona 等の各社とは、提携・承認・後援・その他の関係を一切持ちません。各製品名・会社名は各社の商標または登録商標です
+- **非提携**: Razer / VXE / Compx / Scyrox / Lamzu / Logitech / ROCCAT / Darmoshark / HyperX / HP / ATK / Pulsar / Kysona 等の各社とは、提携・承認・後援・その他の関係を一切持ちません。各製品名・会社名は各社の商標または登録商標です
 - **独立実装**: 通信プロトコルは、公開仕様・コミュニティによるリバースエンジニアリング・独自のUSBキャプチャ解析に基づく独立実装です。各社から提供・許諾されたものではありません
 - **自己責任・無保証**: 設定の書き込みにより、設定の喪失、デバイスの誤動作、復旧不能（文鎮化）を含む損害が発生する可能性があります。作者およびコントリビュータは動作を保証せず、いかなる損害についても責任を負いません。MITライセンスの「AS IS」条項が適用されます
 - **使用前の注意**:

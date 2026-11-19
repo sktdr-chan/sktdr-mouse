@@ -5,7 +5,7 @@
 
 ## 1. 各メーカーとの関係
 
-- 本ソフトは、**Razer、VXE、Compx、Scyrox、Lamzu、Logitech、ROCCAT、Darmoshark、ATK、Pulsar、Kysona** をはじめとする
+- 本ソフトは、**Razer、VXE、Compx、Scyrox、Lamzu、Logitech、ROCCAT、Darmoshark、HyperX、HP Inc.、ATK、Pulsar、Kysona** をはじめとする
   すべてのメーカー・販売会社・開発元と**提携・承認・後援・その他の関係を一切持ちません**。
 - 本ソフトは各社の公式ソフトウェアではありません。各社のサポート対象外です。
 - 製品名・会社名・ロゴは、それぞれの所有者の商標または登録商標です。本ソフトは識別目的でこれらの名称を使用しています。
@@ -38,7 +38,7 @@ MIT ライセンスの条件（著作権表示と許諾文の同梱）を満た�
 
 ## English summary
 
-This is an **unofficial, independent project** and is **not affiliated with, endorsed by, or supported by** Razer, VXE, Compx, Scyrox, Lamzu, Logitech, ROCCAT, Darmoshark, ATK, Pulsar, Kysona, or any other manufacturer. Product and company names are trademarks of their respective owners.
+This is an **unofficial, independent project** and is **not affiliated with, endorsed by, or supported by** Razer, VXE, Compx, Scyrox, Lamzu, Logitech, ROCCAT, Darmoshark, HyperX, HP Inc., ATK, Pulsar, Kysona, or any other manufacturer. Product and company names are trademarks of their respective owners.
 
 The communication protocols are independent implementations based on public documentation, community reverse-engineering, and original USB captures. They are not provided or licensed by the manufacturers.
 

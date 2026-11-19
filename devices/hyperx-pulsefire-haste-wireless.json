@@ -1,0 +1,180 @@
+{
+  "profileVersion": 1,
+  "id": "hyperx-pulsefire-haste-wireless",
+  "protocol": "ngenuity2",
+
+  "_documentation": {
+    "about": "HyperX Pulsefire Haste Wireless (HP/HyperX 2.4GHz dongle, VID 0x03F0 / PID 0x028E) 用プロファイル。HyperX NGenuity2 系の 64 バイト・インタラプト転送（レポートID 0）を使用します。",
+    "protocolSource": "https://github.com/santeri3700/hyperx_pulsefire_dart_reverse_engineering — NGenuity2プロトコル資料。Haste Wireless 実機（03f0:028e）で 0x50/0x51/0x52 の読み取りと D0/D2/DE の応答を確認し、DPI(D3) は同資料のレイアウトで実装",
+    "howItWorks": "ベンダーコレクション (usagePage 0xFF00) を開き、0x50 (ハードウェア情報) に応答があれば接続。設定は D0 (ポーリング)、D2 (LED)、D3 (DPI)、DE FF (保存) の個別コマンドで書き込みます。DPI・ポーリングは読み戻しコマンドが存在しないため、本ソフトが最後に書き込んだ値を data/ にキャッシュして表示します。",
+    "verifiedOn": "2026-11-19: HyperX Pulsefire Haste Wireless (03f0:028e), fw v4.1.0.6 — 0x50/0x51/0x52 読み取り、D0/D2/DE のACK、LED設定の読み戻しを実機確認。DPI(D3) はACKまで確認し、値は公式ソフト同等のエンコードで書き込み",
+    "limitations": "DPI・ポーリングレート・DPIステージ色は読み戻し非対応（書き込み専用）。バッテリー残量は 0x51 の byte4、充電状態は byte5。LEDは 0x52 で読み戻し可能。"
+  },
+
+  "meta": {
+    "name": "HyperX Pulsefire Haste Wireless",
+    "brand": "HyperX (HP)",
+    "models": ["Pulsefire Haste Wireless"],
+    "connectionLabel": "ワイヤレス (2.4GHz)",
+    "notes": "VID 0x03F0 / PID 0x028E。NGenuity2 64バイト・レポートID 0。DPI・ポーリングは書き込み専用。"
+  },
+
+  "defaults": {
+    "dpi1": 400,
+    "dpi2": 800,
+    "dpi3": 1600,
+    "dpi4": 3200,
+    "dpi5": 6400,
+    "dpiColor1": [255, 255, 255],
+    "dpiColor2": [255, 255, 255],
+    "dpiColor3": [255, 255, 255],
+    "dpiColor4": [255, 255, 255],
+    "dpiColor5": [255, 255, 255],
+    "dpiCount": 4,
+    "activeStage": 0,
+    "pollingHz": 1000,
+    "light": {
+      "effect": 0,
+      "color": [255, 255, 255],
+      "brightness": 100,
+      "speed": 0
+    }
+  },
+
+  "usb": {
+    "vendorId": "0x03F0",
+    "productIds": ["0x028E"],
+    "pidLabels": { "0x028E": "2.4GHz ドングル" },
+    "vendorUsagePageMin": "0xFF00",
+    "probeCommand": "getInfo"
+  },
+
+  "transport": {
+    "type": "ngenuity64",
+    "reportId": 0,
+    "packetLength": 64
+  },
+
+  "commands": {
+    "getInfo": { "id": "0x50" },
+    "battery": {
+      "id": "0x51",
+      "response": { "level": 4, "charging": 5 }
+    },
+    "getLed": { "id": "0x52" },
+    "setPolling": { "id": "0xD0" },
+    "setLed": { "id": "0xD2" },
+    "setDpi": { "id": "0xD3" },
+    "saveData": { "id": "0xDE", "data": "ff" }
+  },
+
+  "ui": {
+    "deviceInfo": [
+      { "key": "product", "label": "製品" },
+      { "key": "connection", "label": "接続方式" },
+      { "key": "mouseVersion", "label": "マウスファームウェア" }
+    ],
+
+    "readButton": {
+      "label": "デバイスから状態を再取得",
+      "note": "LED設定とバッテリーを再読み込みします。DPI・ポーリングレート・ステージ色は書き込み専用のため、本ソフトが最後に書き込んだ値を表示します。",
+      "successMessage": "LED設定とバッテリーを再取得しました"
+    },
+
+    "sections": [
+      {
+        "title": "DPI設定",
+        "settings": [
+          {
+            "key": "dpi",
+            "type": "dpiStages",
+            "label": "DPI",
+            "maxRecords": 5,
+            "colors": true,
+            "valueRange": { "min": 200, "max": 16000, "step": 50 },
+            "count": { "read": { "codec": "byte" } },
+            "current": { "read": { "codec": "byte" } },
+            "value": { "read": { "codec": "le16" } },
+            "color": { "read": { "codec": "rgb" } },
+            "hint": "200〜16000（50刻み）。DPIは書き込み専用です。表示値は本ソフトが最後に書き込んだ値（初回は既定値）です。"
+          }
+        ]
+      },
+      {
+        "title": "ポーリングレート",
+        "settings": [
+          {
+            "key": "polling",
+            "type": "segmented",
+            "label": "ポーリングレート",
+            "unit": " Hz",
+            "options": [
+              { "value": 125, "label": "125" },
+              { "value": 250, "label": "250" },
+              { "value": 500, "label": "500" },
+              { "value": 1000, "label": "1000" }
+            ],
+            "read": { "cache": "pollingHz" },
+            "hint": "2.4GHz接続時のレートです（125/250/500/1000Hz）。"
+          }
+        ]
+      },
+      {
+        "title": "ライト設定",
+        "settings": [
+          {
+            "key": "light",
+            "type": "group",
+            "label": "ライト",
+            "fields": [
+              {
+                "key": "effect",
+                "type": "select",
+                "label": "モード",
+                "read": {
+                  "codec": {
+                    "type": "enum",
+                    "values": [
+                      { "value": 0, "code": 0, "label": "スタティック" },
+                      { "value": 4, "code": 4, "label": "LightSync（既定）" },
+                      { "value": 16, "code": 16, "label": "スペクトル（簡易）" },
+                      { "value": 18, "code": 18, "label": "スペクトルサイクル" },
+                      { "value": 32, "code": 32, "label": "ブリージング" },
+                      { "value": 48, "code": 48, "label": "トリガーフェード" }
+                    ]
+                  }
+                }
+              },
+              {
+                "key": "color",
+                "type": "color",
+                "label": "カラー",
+                "read": { "bytes": 3, "codec": "rgb" }
+              },
+              {
+                "key": "brightness",
+                "type": "slider",
+                "label": "明るさ",
+                "min": 0,
+                "max": 100,
+                "step": 1,
+                "read": { "codec": "byte" },
+                "hint": "0〜100。0で消灯します。"
+              },
+              {
+                "key": "speed",
+                "type": "slider",
+                "label": "速度",
+                "min": 0,
+                "max": 100,
+                "step": 1,
+                "read": { "codec": "byte" },
+                "hint": "0〜100（効果によって意味が異なります）。"
+              }
+            ]
+          }
+        ]
+      }
+    ]
+  }
+}

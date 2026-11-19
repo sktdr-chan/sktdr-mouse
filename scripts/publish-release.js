@@ -138,7 +138,7 @@ const body = [
   '```',
   '',
   '### 免責事項',
-  '本ソフトは非公式・無保証です。Razer / VXE / Compx / Scyrox / Lamzu / Logitech / ROCCAT / Darmoshark 等の各社とは関係ありません。',
+  '本ソフトは非公式・無保証です。Razer / VXE / Compx / Scyrox / Lamzu / Logitech / ROCCAT / Darmoshark / HyperX / HP 等の各社とは関係ありません。',
   '設定の書き込みは自己責任で行ってください。詳細はZIP内の `DISCLAIMER.md` を参照してください。',
   '',
   '> 署名はしていません。SmartScreenの警告が出る場合は「詳細情報」→「実行」を選択してください。',

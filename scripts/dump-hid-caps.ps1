@@ -62,7 +62,7 @@ public static class HidDump {
 "@
 Add-Type -TypeDefinition $src -Language CSharp
 
-$devs = node -e "const h=require('node-hid');console.log(JSON.stringify(h.devices().filter(d=>[0x1e7d,0x3554,0x373b,0x1915,0x046d,0x1532,0x25aa].includes(d.vendorId)).map(x=>({path:x.path,product:x.product,iface:x.interface,pid:x.productId}))))" | ConvertFrom-Json
+$devs = node -e "const h=require('node-hid');console.log(JSON.stringify(h.devices().filter(d=>[0x1e7d,0x3554,0x373b,0x1915,0x046d,0x1532,0x25aa,0x03f0].includes(d.vendorId)).map(x=>({path:x.path,product:x.product,iface:x.interface,pid:x.productId}))))" | ConvertFrom-Json
 
 foreach ($d in $devs) {
   $h = [HidDump]::CreateFile($d.path, [uint32]3221225472, [uint32]3, [IntPtr]::Zero, [uint32]3, [uint32]0, [IntPtr]::Zero)

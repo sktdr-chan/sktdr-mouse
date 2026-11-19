@@ -94,6 +94,28 @@ class Transport {
       this.transactionId = num(t.transactionId, 0x1f);
       this.L = null;
       this._skipReadLoop = true;
+    } else if (this.type === 'ngenuityUniversal') {
+      // HyperX NGENUITY 3.x "universal" protocol (Pulsefire Haste 2 Wireless):
+      // 64-byte packets whose report ID *is* the command byte, sub-command in
+      // byte 1. Replies use report ID command+1; every command is also ACKed
+      // by the dongle with FF 01 <device id 12B> <cmd> <sub> <status>.
+      this.reportId = 0;
+      this.packetLength = num(t.packetLength, 64);
+      this.L = { command: 0, sub: 1 };
+      this.commandAsReportId = true;
+      this.ckBase = 0;
+      this.ckSubtractReportId = false;
+    } else if (this.type === 'ngenuity64') {
+      // HyperX NGenuity2 (Pulsefire Dart/Haste Wireless family): 64-byte
+      // request/response reports on the vendor collection. The wire report is
+      // 65 bytes (report ID 0x00 + 64-byte payload); replies come back as
+      // 64-byte payloads whose first byte echoes the command. There is no
+      // checksum and no fixed layout: the profile/adaptor builds the payload.
+      this.reportId = 0;
+      this.packetLength = num(t.packetLength, 64);
+      this.L = { command: 0, status: 1 };
+      this.ckBase = 0;
+      this.ckSubtractReportId = false;
     } else if (this.type === 'moji64') {
       // Darmoshark (MOJI) transport: report id 0x00 + 64-byte frames.
       //   [0]=type (bit6 = 2.4GHz work mode, baked into command ids),
@@ -259,6 +281,25 @@ class Transport {
     if (this.type === 'moji64') {
       return this.buildMojiPacket(num(c.id), num(c.opcode), num(c.sub, 0), data);
     }
+    if (this.type === 'ngenuityUniversal') {
+      const p = Buffer.alloc(this.packetLength, 0);
+      p[0] = num(c.id);
+      p[1] = num(c.sub, 0) & 0x3f;
+      const raw = data.length ? data : parseHexString(c.data || '');
+      for (let i = 0; i < Math.min(raw.length, this.packetLength - 2); i++) {
+        p[2 + i] = raw[i] & 0xff;
+      }
+      return p;
+    }
+    if (this.type === 'ngenuity64') {
+      const p = Buffer.alloc(this.packetLength, 0);
+      p[0] = num(c.id);
+      const raw = data.length ? data : parseHexString(c.data || '');
+      for (let i = 0; i < Math.min(raw.length, this.packetLength - 1); i++) {
+        p[1 + i] = raw[i] & 0xff;
+      }
+      return p;
+    }
     const len = lenOverride != null ? lenOverride : num(c.dataLength, data.length);
     return this.buildPacket(num(c.id), { addr, len, data });
   }
@@ -381,7 +422,10 @@ class Transport {
 
   _onPacket(buf) {
     let pkt;
-    if (this.type === 'swarmEcho64') {
+    if (this.type === 'ngenuityUniversal') {
+      // unnumbered 64-byte report: byte 0 is the report ID (= command / reply)
+      pkt = buf.length >= this.packetLength ? buf.slice(0, this.packetLength) : buf;
+    } else if (this.type === 'swarmEcho64') {
       // unnumbered reports: payload only, no report-id prefix on the wire data
       pkt = buf.length >= this.packetLength ? buf.slice(0, this.packetLength) : buf;
     } else if (this.type === 'hidpp') {
@@ -402,6 +446,16 @@ class Transport {
     }
     if (this.type === 'moji64' && !this.verifyChecksum(pkt)) {
       this.emit('log', { level: 'warn', message: `checksum mismatch: ${pkt.toString('hex')}` });
+      return;
+    }
+
+    // HyperX NGenuity2 async state event: FF 03 <profile> <cable> <wake> …
+    if (this.type === 'ngenuity64' && pkt[0] === 0xff) {
+      this.emit('ngenuityState', {
+        profile: pkt[2],
+        charging: pkt[3] === 1,
+        wake: pkt[4] === 1,
+      });
       return;
     }
 
@@ -480,11 +534,31 @@ class Transport {
       const statusOk = request[0] === 0x90 ? 0x04 : 0x03;
       return response[0] === request[0] && response[1] === request[1] && response[2] === statusOk;
     }
+    if (this.type === 'ngenuityUniversal') {
+      if (!request || !response || response.length < 16) return false;
+      const sub = request[1] & 0x3f;
+      if (this._inflight && this._inflight.expectReply) {
+        // real reply: [cmd+1, sub, payload…]
+        return response[0] === ((request[0] + 1) & 0xff) && response[1] === sub;
+      }
+      // dongle ACK: ff 01 <12-byte device id> <cmd> <sub> <status>
+      return (
+        response[0] === 0xff &&
+        response[1] === 0x01 &&
+        response[14] === request[0] &&
+        response[15] === sub
+      );
+    }
     if (this.type === 'moji64') {
       if (!request || !response || response.length < 4) return false;
       // responses echo the type (with or without the 0x40 work-mode bit)
       // and the sub-command byte; the opcode byte differs by design.
       return (response[0] & 0x3f) === (request[0] & 0x3f) && response[3] === request[3];
+    }
+    if (this.type === 'ngenuity64') {
+      // NGenuity2 replies echo the command byte (first byte).
+      if (!request || !response || response.length < 1) return false;
+      return response[0] === request[0];
     }
     if (!request || !response || response.length < this.packetLength) return false;
     // readFlash responses echo command + address + length (bytes 0-4)
@@ -495,13 +569,13 @@ class Transport {
     return response[this.L.command] === request[this.L.command];
   }
 
-  command(packet, { timeout = 300, retries = 3 } = {}) {
+  command(packet, { timeout = 300, retries = 3, expectReply = false } = {}) {
     if (this._closed) {
       return Promise.reject(new TransportError('デバイスは閉じられています', 'closed'));
     }
     if (this.minTimeoutMs && timeout < this.minTimeoutMs) timeout = this.minTimeoutMs;
     return new Promise((resolve, reject) => {
-      this._queue.push({ packet, timeout, retries, attempt: 0, resolve, reject });
+      this._queue.push({ packet, timeout, retries, expectReply, attempt: 0, resolve, reject });
       this._pump();
     });
   }
@@ -526,7 +600,11 @@ class Transport {
       return this.resolveFeatureIndex(num(c.feature))
         .then((idx) => this.command(this.buildHidppPacket(idx, fn, params), opts));
     }
-    return this.command(this.buildByName(name, { addr, lenOverride, data }), opts);
+    const c = (this.profile.commands || {})[name] || {};
+    return this.command(this.buildByName(name, { addr, lenOverride, data }), {
+      ...opts,
+      expectReply: !!c.expectReply,
+    });
   }
 
   _pump() {
@@ -576,7 +654,10 @@ class Transport {
     }
 
     let out;
-    if (this.type === 'hidpp') {
+    if (this.type === 'ngenuityUniversal') {
+      // report ID is already byte 0 of the packet
+      out = item.packet;
+    } else if (this.type === 'hidpp') {
       // packet already carries its report id (0x11) at byte 0
       out = item.packet;
     } else if (this.type === 'swarmEcho64' || this.type === 'moji64') {

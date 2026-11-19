@@ -1,0 +1,45 @@
+{
+  "dpi1": 400,
+  "dpi2": 800,
+  "dpi3": 1600,
+  "dpi4": 3200,
+  "dpi5": 6400,
+  "dpiColor1": [
+    0,
+    255,
+    64
+  ],
+  "dpiColor2": [
+    255,
+    128,
+    128
+  ],
+  "dpiColor3": [
+    0,
+    255,
+    64
+  ],
+  "dpiColor4": [
+    255,
+    255,
+    255
+  ],
+  "dpiColor5": [
+    255,
+    255,
+    255
+  ],
+  "dpiCount": 4,
+  "activeStage": 0,
+  "pollingHz": 1000,
+  "light": {
+    "effect": 0,
+    "color": [
+      128,
+      0,
+      64
+    ],
+    "brightness": 100,
+    "speed": 0
+  }
+}
