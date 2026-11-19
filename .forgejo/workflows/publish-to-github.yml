@@ -4,51 +4,72 @@ on:
   release:
     types: [published]
   workflow_dispatch:
+    inputs:
+      tag:
+        description: 'Tag to publish (e.g. v0.1.0)'
+        required: true
+        type: string
 
 jobs:
   publish:
     runs-on: linux
     steps:
+      - name: Set tag name
+        id: tag
+        run: |
+          if [ "${{ github.event_name }}" = "workflow_dispatch" ]; then
+            echo "name=${{ inputs.tag }}" >> $GITHUB_OUTPUT
+          else
+            echo "name=${{ github.event.release.tag_name }}" >> $GITHUB_OUTPUT
+          fi
+
       - name: Checkout
         uses: actions/checkout@v4
         with:
           fetch-depth: 0
-          ref: ${{ github.event.release.tag_name }}
+          ref: ${{ steps.tag.outputs.name }}
 
       - name: Push source and tag to GitHub
         env:
           GH_TOKEN: ${{ secrets.GH_SKMOUSE_TOKEN }}
+          TAG: ${{ steps.tag.outputs.name }}
         run: |
           git config user.name "forgejo-actions"
           git config user.email "actions@forgejo.local"
           git remote add github https://x-access-token:${GH_TOKEN}@github.com/sktdr-chan/sktdr-mouse.git
-          git push github HEAD:refs/heads/main
-          git push github ${{ github.event.release.tag_name }}
+          # detached HEADでも動くように明示指定 + force
+          git push github HEAD:refs/heads/main --force
+          git push github "$TAG" --force
 
       - name: Download release assets from Forgejo
         env:
-          FORGEJO_TOKEN: ${{ secrets.FG_SKMOUSE_TOKEN }}  # または自動トークンを使う
+          FORGEJO_TOKEN: ${{ secrets.FG_SKMOUSE_TOKEN }}
+          TAG: ${{ steps.tag.outputs.name }}
         run: |
-          TAG="${{ github.event.release.tag_name }}"
           mkdir -p assets
-          # Forgejo APIからRelease情報を取得してアセットをダウンロード
-          # インスタンスのURLに合わせて調整してください
           curl -s -H "Authorization: token ${FORGEJO_TOKEN}" \
             "https://forgejo.pw2.org/api/v1/repos/sktdr/sktdr-mouse/releases/tags/${TAG}" \
             | jq -r '.assets[].browser_download_url' \
             | while read url; do
                 filename=$(basename "$url")
-                curl -L -o "assets/${filename}" "$url"
+                curl -L -H "Authorization: token ${FORGEJO_TOKEN}" -o "assets/${filename}" "$url"
               done
+          ls -la assets/
 
       - name: Create GitHub Release and upload assets
         env:
-          GH_TOKEN: ${{ secrets.GH_TOKEN }}
+          GH_TOKEN: ${{ secrets.GH_SKMOUSE_TOKEN }}
+          TAG: ${{ steps.tag.outputs.name }}
         run: |
-          TAG="${{ github.event.release.tag_name }}"
+          # gh コマンドがなければインストール
+          if ! command -v gh &> /dev/null; then
+            curl -sL https://github.com/cli/cli/releases/download/v2.62.0/gh_2.62.0_linux_amd64.tar.gz | tar xz
+            sudo mv gh_2.62.0_linux_amd64/bin/gh /usr/local/bin/
+          fi
+
           gh release create "$TAG" \
             --repo sktdr-chan/sktdr-mouse \
             --title "$TAG" \
             --notes "Release from Forgejo" \
-            assets/*
-
+            assets/* \
+            || gh release upload "$TAG" assets/* --repo sktdr-chan/sktdr-mouse --clobber
