@@ -9,7 +9,7 @@
 <body>
 
 <header class="topbar">
-  <div class="brand"><span id="brandName">sktdr</span><em id="brandModel">-mouse</em><span class="sub" id="brandSub">設定ツール</span></div>
+  <div class="brand"><span id="brandName">sktdr</span><em id="brandModel">-mouse</em><span class="sub" id="brandSub">設定ツール</span><span class="build-badge" id="buildBadge" hidden></span></div>
   <div class="chips">
     <span id="deviceChips" class="device-chips"></span>
     <span id="connChip" class="chip chip-off">未接続</span>
@@ -56,9 +56,16 @@
     接続中のマウスが上部に表示されます。非アクティブ（切断・スリープ）になったマウスは灰色になり、
     1分間再接続されないと自動で消えます。
   </p>
+  <p class="hint disclaimer-note" id="disclaimerNote">
+    本ソフトは非公式・無保証です。すべて自己責任で使用してください。
+  </p>
   <div class="manage-settings">
     <label for="langSelect" id="langLabel">表示言語</label>
     <select id="langSelect"></select>
+  </div>
+  <div class="manage-settings">
+    <span id="buildInfoLabel">ビルド</span>
+    <span id="buildInfoValue" class="build-value">—</span>
   </div>
   <div id="manageList"></div>
 </dialog>

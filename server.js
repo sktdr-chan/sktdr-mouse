@@ -5,6 +5,7 @@
 //
 //   http://localhost:3554  → UI (public/)
 //   /api/status            → connected devices list
+//   /api/build-info        → app build metadata (commit id / build time)
 //   /api/schema?device=ID  → device profile UI schema (from JSON)
 //   /api/config?device=ID  → parsed device config
 //   /api/apply  (POST)     → generic setting write: { device, setting, args }
@@ -17,13 +18,44 @@
 const http = require('http');
 const fs = require('fs');
 const path = require('path');
-const { exec } = require('child_process');
+const { exec, execFileSync } = require('child_process');
 const { loadProfiles } = require('./core/profile');
 const { DeviceManager } = require('./core/manager');
+const pkg = require('./package.json');
 
 const PORT = Number(process.env.PORT || 3554);
 const HOST = '127.0.0.1';
 const PUBLIC_DIR = path.join(__dirname, 'public');
+
+// Build metadata: packaged builds embed build-info.json (written by
+// scripts/build-dist.js); `npm start` falls back to the current git checkout.
+const BUILD_INFO = (() => {
+  try {
+    return JSON.parse(fs.readFileSync(path.join(__dirname, 'build-info.json'), 'utf8'));
+  } catch (e) {
+    /* development */
+  }
+  const info = {
+    version: pkg.version,
+    commit: '',
+    shortCommit: 'dev',
+    label: 'dev',
+    dirty: false,
+    builtAt: null,
+    electron: process.versions.electron || null,
+  };
+  try {
+    const gitOpts = { cwd: __dirname, encoding: 'utf8', stdio: ['ignore', 'pipe', 'ignore'] };
+    info.commit = execFileSync('git', ['rev-parse', 'HEAD'], gitOpts).trim();
+    info.dirty =
+      execFileSync('git', ['status', '--porcelain', '--untracked-files=no'], gitOpts).trim() !== '';
+    info.shortCommit = info.commit.slice(0, 7);
+    info.label = info.dirty ? `${info.shortCommit}-dirty` : info.shortCommit;
+  } catch (e) {
+    /* not a git checkout */
+  }
+  return info;
+})();
 
 // Everything below is wrapped in startServer() so the Electron shell can boot
 // the same server in-process (and so tests can spin it up on any port).
@@ -178,6 +210,9 @@ function serveStatic(res, urlPath) {
     }
 
     if (req.method === 'GET') {
+      if (u.pathname === '/api/build-info') {
+        return sendJSON(res, 200, { ok: true, build: BUILD_INFO });
+      }
       if (u.pathname === '/api/status') {
         return sendJSON(res, 200, { ok: true, devices: manager.statusPayload() });
       }

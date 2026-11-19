@@ -73,6 +73,7 @@ const shortCommit = fullCommit ? fullCommit.slice(0, 7) : 'nocommit';
 // A local build with uncommitted changes gets a -dirty marker; CI is clean.
 const dirty = !envCommit && gitOut(['status', '--porcelain', '--untracked-files=no']) !== '';
 const buildLabel = dirty ? `${shortCommit}-dirty` : shortCommit;
+const builtAt = new Date().toISOString();
 
 const folderName = `sktdr-mouse-${buildLabel}-win64`;
 const outDir = path.join(distDir, folderName);
@@ -147,6 +148,24 @@ function stageApp() {
     if (!fs.existsSync(src)) fail(`missing dependency: ${dep} (run npm install)`);
     fs.cpSync(src, path.join(nm, dep), { recursive: true });
   }
+
+  // Embedded build metadata, served by GET /api/build-info and shown in the UI.
+  fs.writeFileSync(
+    path.join(stagingDir, 'build-info.json'),
+    JSON.stringify(
+      {
+        version: pkg.version,
+        commit: fullCommit,
+        shortCommit,
+        dirty,
+        label: buildLabel,
+        builtAt,
+        electron: electronVersion,
+      },
+      null,
+      2
+    ) + '\n'
+  );
 }
 
 function writeLicenses() {
@@ -157,6 +176,7 @@ function writeLicenses() {
     fs.renameSync(electronLicense, path.join(outDir, 'LICENSE.electron.txt'));
   }
   fs.copyFileSync(path.join(root, 'LICENSE'), path.join(outDir, 'LICENSE'));
+  fs.copyFileSync(path.join(root, 'DISCLAIMER.md'), path.join(outDir, 'DISCLAIMER.md'));
 
   const licDir = path.join(outDir, 'licenses');
   fs.mkdirSync(licDir, { recursive: true });
@@ -212,6 +232,7 @@ function writeLicenses() {
       '・設定キャッシュ: %APPDATA%\\sktdr-mouse\\data',
       '・使用ポート: http://localhost:3554（起動中は内部サーバーが動きます）',
       '・アンインストール: このフォルダを丸ごと削除してください。',
+      '・免責事項: DISCLAIMER.md（非公式・無保証・自己責任）を必ずお読みください。',
       '・ライセンス: LICENSE（本アプリ, MIT） / LICENSE.electron.txt /',
       '  LICENSES.chromium.html / licenses\\（依存ライブラリ）',
       '',
@@ -290,10 +311,11 @@ async function main() {
         shortCommit,
         dirty,
         label: buildLabel,
-        builtAt: new Date().toISOString(),
+        builtAt,
         folder: folderName,
         zip: path.basename(zipPath),
         sha256: hash,
+        electron: electronVersion,
       },
       null,
       2

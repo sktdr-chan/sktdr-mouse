@@ -17,7 +17,15 @@
       "2/34": "VXE R1 Pro Max (VXE NordicMouse 1K Dongle, FW v1.21) — フラッシュマップ同一、書き込みACK・読み戻し検証済み (2026-11-18)"
     },
     "notCovered": "新世代Scyrox V6S/V8S (VID 0x395A、64バイト別プロトコル) は本プロファイルでは動作しません",
-    "verifiedOn": "Scyrox V8 (MID=1), Scyrox V6 (MID=2), Lamzu Maya (MID=4) — 2026-11-18"
+    "verifiedOn": "作者実機 (2026-11-18): Scyrox V8 (MID=1, 8Kドングル 0x3554:0xF5F7, dongle FW v2.17 / mouse FW v2.22)、Scyrox V6 (MID=2)、Lamzu Maya (MID=4, LAMZU Pro 1K Receiver)、VXE R1 Pro Max (MID=34, VXE NordicMouse 1K Dongle FW v1.21、書き込みACK・読み戻し確認)",
+    "likelyCompatibleUnverified": {
+      "VXE R1 SE+": "0x3554:0xF58E (1K receiver) / 0xF58F (wired)。OpenMouseではCOMPX系、LinuxカーネルではATK/Pulsar系として扱われ、報告が混在。要検証",
+      "Lamzu Thorn": "CompX protocol implemented (OpenMouse)。PID未確定。未検証",
+      "Lamzu Atlantis系": "0xF50F (wired) / 0xF50D, 0xF510 (receivers)。OpenMouseで同一ファミリ。未検証",
+      "Gravastar Mercury M1 Pro": "0x3554:0xF54B/0xF575/0xF548/0xF577 (wireless), 0xF576/0xF549 (wired)。Pulsar/Compx report-8 protocolとの報告。未検証",
+      "E-YOOSO X-44 Pro+ 8K": "0x3554 (PIDはリビジョン違い)。Compx系としての動作報告あり。未検証"
+    },
+    "differentProtocol": "VID 0x3554でも別プロトコルの機種あり: Pulsar X2/X2H/X2A/Xlite V3 (0xF507/0xF508/0xF509)、Kysona M600、VXE Dragonfly R1 Pro 等。VXE R1 SE/SE+ はCOMPX系とATK/Pulsar系の報告が混在。Lamzu Maya XはLamzu独自VID系。"
   },
 
   "meta": {

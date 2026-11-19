@@ -32,6 +32,7 @@ const slots = {}; // deviceId -> { schema, status, config }
 let busy = false;
 let resetArmed = null;
 let builtFor = null; // schema id the settings DOM was built for
+let buildInfo = null; // from /api/build-info
 
 /* ------------------------------------------------------------------ i18n */
 
@@ -49,8 +50,10 @@ const I18N = {
     manageTitle: '対応するマウス',
     manageHint:
       '接続中のマウスが上部に表示されます。非アクティブ（切断・スリープ）になったマウスは灰色になり、1分間再接続されないと自動で消えます。',
+    disclaimerShort: '本ソフトは非公式・無保証です。すべて自己責任で使用してください。',
     language: '表示言語',
     battery: 'バッテリー',
+    build: 'ビルド',
     applyModeTip: '変更の適用方法：即時適用か、保存ボタンでまとめて適用か',
     applyImmediate: '即時適用',
     applyManual: '保存ボタン',
@@ -110,8 +113,10 @@ const I18N = {
     manageTitle: 'Supported Mice',
     manageHint:
       'Connected mice appear in the header. Inactive mice (disconnected or sleeping) turn gray and disappear automatically if they stay offline for one minute.',
+    disclaimerShort: 'Unofficial software, provided as-is and without warranty. Use at your own risk.',
     language: 'Language',
     battery: 'Battery',
+    build: 'Build',
     applyModeTip: 'How changes are applied: immediately, or all together with the Save button',
     applyImmediate: 'Apply instantly',
     applyManual: 'Save button',
@@ -171,8 +176,10 @@ const I18N = {
     manageTitle: '支持的鼠标',
     manageHint:
       '已连接的鼠标显示在顶部。非活动（断开或休眠）的鼠标会变灰，若 1 分钟内未重新连接则会自动消失。',
+    disclaimerShort: '本软件为非官方、无保证的软件，请自行承担使用风险。',
     language: '显示语言',
     battery: '电池',
+    build: '构建',
     applyModeTip: '更改的应用方式：立即应用，或通过保存按钮统一应用',
     applyImmediate: '立即应用',
     applyManual: '保存按钮',
@@ -488,7 +495,9 @@ function applyStaticI18n() {
     logTitle: t('log'),
     manageTitle: t('manageTitle'),
     manageHint: t('manageHint'),
+    disclaimerNote: t('disclaimerShort'),
     langLabel: t('language'),
+    buildInfoLabel: t('build'),
     manageBtnLabel: t('manage'),
     applyAllBtn: null, // text handled by updateApplyButton()
   };
@@ -506,6 +515,53 @@ function applyStaticI18n() {
   const modeLabel = $('#applyModeLabel');
   const modeToggle = $('#applyModeToggle');
   if (modeLabel && modeToggle) modeLabel.textContent = modeToggle.checked ? t('applyImmediate') : t('applyManual');
+  renderBuildInfo();
+}
+
+/* Build id (commit) shown in the header badge and the manage dialog. */
+async function loadBuildInfo() {
+  try {
+    const r = await fetch('/api/build-info');
+    const j = await r.json();
+    buildInfo = (j && j.build) || null;
+  } catch (e) {
+    buildInfo = null;
+  }
+  renderBuildInfo();
+}
+
+function renderBuildInfo() {
+  const badge = $('#buildBadge');
+  const value = $('#buildInfoValue');
+  if (!buildInfo || !buildInfo.label) {
+    if (badge) badge.hidden = true;
+    if (value) value.textContent = '—';
+    return;
+  }
+  const built = buildInfo.builtAt ? new Date(buildInfo.builtAt) : null;
+  const builtText =
+    built && !Number.isNaN(built.getTime())
+      ? built.toLocaleString(lang === 'en' ? 'en-US' : lang === 'zh' ? 'zh-CN' : 'ja-JP', {
+          hour12: false,
+        })
+      : '';
+  const details = [
+    buildInfo.commit ? `commit ${buildInfo.commit}` : '',
+    builtText ? `built ${builtText}` : '',
+    buildInfo.electron ? `Electron ${buildInfo.electron}` : '',
+  ]
+    .filter(Boolean)
+    .join('\n');
+
+  if (badge) {
+    badge.hidden = false;
+    badge.textContent = buildInfo.label;
+    badge.title = details;
+  }
+  if (value) {
+    value.textContent = buildInfo.label + (builtText ? `  (${builtText})` : '');
+    value.title = details;
+  }
 }
 
 function setLanguage(next) {
@@ -1797,6 +1853,7 @@ async function init() {
     if (dlg && dlg.open) renderManageList();
   }, 5000);
   try {
+    await loadBuildInfo();
     const r = await fetch('/api/status');
     const j = await r.json();
     updateDevices(j.devices || []);

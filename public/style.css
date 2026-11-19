@@ -68,6 +68,26 @@ html, body {
   letter-spacing: 3px;
 }
 
+/* build id chip (commit SHA) — display only, not clickable */
+.build-badge {
+  display: inline-block;
+  margin-left: 10px;
+  padding: 2px 8px;
+  border-radius: 999px;
+  background: var(--bg-soft);
+  color: var(--text-dim);
+  font-family: Consolas, "Courier New", monospace;
+  font-size: 11px;
+  font-weight: 600;
+  letter-spacing: 0.4px;
+  vertical-align: 2px;
+  cursor: default;
+}
+.build-badge[hidden] { display: none; }
+@media (max-width: 640px) {
+  .build-badge { display: none; }
+}
+
 .chips { display: flex; gap: 8px; align-items: center; flex-wrap: wrap; }
 .device-chips { display: flex; gap: 6px; }
 
@@ -172,6 +192,15 @@ html, body {
 .manage-header { display: flex; justify-content: space-between; align-items: center; margin-bottom: 8px; }
 .manage-header h3 { margin: 0; font-size: 17px; }
 #manageDialog .hint { margin-bottom: 16px; }
+#manageDialog .disclaimer-note {
+  margin: 0 0 14px;
+  padding: 9px 12px;
+  border: 1px solid rgba(168, 98, 0, 0.25);
+  border-radius: 8px;
+  background: rgba(255, 180, 84, 0.14);
+  color: var(--warn);
+  font-size: 12px;
+}
 
 .manage-settings {
   display: flex;
@@ -184,6 +213,12 @@ html, body {
   background: var(--card-inner);
 }
 .manage-settings label { font-size: 13px; font-weight: 600; }
+#buildInfoLabel { font-size: 13px; font-weight: 600; }
+.build-value {
+  font-family: Consolas, "Courier New", monospace;
+  font-size: 12.5px;
+  color: var(--text-dim);
+}
 
 .manage-row {
   display: flex;

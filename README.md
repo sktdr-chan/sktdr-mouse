@@ -6,6 +6,10 @@
 
 **UIは日本語・English・中文の3言語対応**（⚙管理 → 表示言語で切り替え）。明るいライトテーマです。
 
+> ⚠️ **免責事項**: 本ソフトは**非公式・無保証**です。各メーカーとは提携・承認・後援関係がなく、
+> プロトコル実装は公開情報・コミュニティ解析・独自キャプチャに基づく独立実装です。
+> 設定の書き込みは**自己責任**で行ってください。全文は **[DISCLAIMER.md](DISCLAIMER.md)** を必ずお読みください。
+
 | 対応機種 | 接続 | 実装方式 |
 | --- | --- | --- |
 | **Compx系汎用** (VID 0x3554) — Scyrox V8 / Scyrox V6 / Lamzu Maya / VXE R1 Pro Max 等 | 8K・標準・1Kドングル / 有線 | HIDフラッシュマップ直接読み書き。VID一致で自動検出し、ハンドシェークのMIDで機種名を表示（V8=1, V6=2, Maya=4, R1 Pro Max=34。未知のMIDもHID製品名で動作） |
@@ -15,8 +19,12 @@
 | **Razer DeathAdder V3 Pro** (VID 0x1532, 有線) | USB有線 | **Razer 90バイトfeatureレポート**（openrazerプロトコル）。DPIステージ・レート・スリープ時間を即時適用・永続化 |
 | **ROCCAT Kone Pro Air** (有線, VID 0x1E7D) | USB有線 | Swarm通信をキャプチャ解析した12コマンド適用シーケンス |
 
+> Compx系の詳細（作者が実機確認したモデル／動作する可能性が高いモデル／別プロトコル機種）は
+> 下の「Compx系の対応状況」を参照してください。
+
 ## UIの特徴（マウス管理）
 
+- **ビルド情報の表示** — ヘッダーにビルド元コミットの短縮ID（例: `4bad54c`）を表示。⚙管理ダイアログにはコミット・ビルド日時・Electronバージョンを表示
 - **デバイス情報とログは左レールに配置** — ログはデバイス情報の直下でスクロールに追従（sticky）するため、下の設定を変更した結果をその場で確認できます
 - **上部には接続中のマウスだけを表示** — 切断・スリープ中は灰色チップ、1分間オンラインに戻らなければ自動で消える
 - **設定画面を開いているマウスは極太の黒枠**で強調、他のオンラインマウスは淡い緑
@@ -24,6 +32,61 @@
 - **数値入力つきスライダー**、**即時適用↔保存ボタン切替**（変更を保留してまとめて適用するモード、localStorageで保持）
 
 （参考: 次世代の Scyrox V6S/V8S は VID 0x395A・別プロトコルで未対応 — 対応するには新しいプロファイルとトランスポートの追加が必要）
+
+## Compx系（VID 0x3554）の対応状況
+
+Compx系チップ（VID `0x3554`）は**同じVIDでも複数のプロトコル**が存在します。本ソフトが扱うのは、
+**16バイト・レポートID 8・チェックサム `0x55` 系**の旧世代Compxプロトコルです。
+接続時にドングルバージョン照会 (`0x1D`) とハンドシェイク (`0x01`) を行い、応答した場合のみ設定画面を表示します。
+
+### 作者が実機で動作確認したモデル
+
+| モデル | 接続 | 確認内容 |
+| --- | --- | --- |
+| **Scyrox V8** (MID=1) | 8Kドングル `0x3554:0xF5F7` / 有線 | 読み書き確認（ドングルFW v2.17 / マウスFW v2.22） |
+| **Scyrox V6** (MID=2) | 8K・標準ドングル / 有線 | 読み書き確認 |
+| **Lamzu Maya** (MID=4) | LAMZU Pro 1K Receiver | 読み書き確認 |
+| **VXE R1 Pro Max** (MID=34) | VXE NordicMouse 1K Dongle (FW v1.21) | フラッシュマップ同一、書き込みACK・読み戻し確認 |
+
+> 上記は `devices/compx-generic.json` の `verifiedOn` / `knownMids` に記録された内容です。
+
+### 同一プロトコルで動作する可能性が高いモデル（未検証）
+
+| モデル | 接続例 | 期待度 | 根拠・備考 |
+| --- | --- | --- | --- |
+| VXE R1 SE+ | `0x3554:0xF58E` (1K receiver) / `0xF58F` (wired) | 中 | OpenMouseではCOMPX系、LinuxカーネルではATK/Pulsar系として扱われる。**報告が混在**しており要検証 |
+| Lamzu Thorn | Compx (PID未確定) | 高 | OpenMouseで「CompX protocol implemented」と記載 |
+| Lamzu Atlantis系 (OG V2 / Mini / Mini Pro / Paro) | `0xF50F` (wired) / `0xF50D`, `0xF510` (receivers) | 中 | OpenMouseで同一ファミリのIDを確認。FW・個体差に注意 |
+| Gravastar Mercury M1 Pro | `0xF54B/0xF575/0xF548/0xF577` (wireless), `0xF576/0xF549` (wired) | 高 | OpenMouseで「Pulsar/Compx **report-8** protocol」と記載 |
+| E-YOOSO X-44 Pro+ (8K) | `0x3554`（PIDはリビジョン違い） | 中 | コミュニティでCompx系として動作報告（ClickSync） |
+| その他の旧世代Compx機 | `0x3554` | 自動判定 | `0x1D` 照会＋`0x01` ハンドシェイクに応答すれば設定可能 |
+
+> 「高」はプロトコル一致の報告があるもの、「中」はファミリ・VID一致レベルのものです。
+> **いずれも作者の実機検証はありません。** 書き込み前に読み取りのみで確認してください。
+
+### VID 0x3554 でも別プロトコルのため対象外
+
+| モデル | 理由 |
+| --- | --- |
+| Scyrox V6S / V8S（新世代） | VID `0x395A`・64バイトの別プロトコル（本プロファイル対象外）。0x3554のV8S報告もあり要検証 |
+| VXE Dragonfly R1 Pro | LinuxカーネルではKysona/Pulsar系プロトコルとして扱われる |
+| Pulsar X2 / X2H / X2A / Xlite V3 | `0x3554:0xF507/0xF508/0xF509` だがPulsar独自プロトコル |
+| Kysona M600 | Kysona独自プロトコル |
+| Lamzu Maya X | Lamzu独自ドライバ/VID系の可能性が高く、本プロファイル対象外 |
+| Dark Project Novus | `0x3554:0xFB0A` だがNordic系・プロトコル未解明 |
+
+> 同じ型番でもファームウェアや出荷時期でプロトコルが異なる報告があります。
+> 実機で `0x1D` 照会に応答しない場合は、その個体は本ソフトの対象外です。
+
+出典:
+- [OpenMouse — Supported Devices](https://openmouse.app/supported)（Compx系のPID・対応状況）
+- [Linux kernel — HID: Kysona: Add support for VXE Dragonfly R1 Pro](https://lkml.iu.edu/2603.3/02147.html)
+- [Linux kernel — HID: pulsar（VXE R1 SE+ / ATK の記述）](https://lists.openwall.net/linux-kernel/2026/08/25/835)
+- [libratbag #1828 — Dark Project Novus (Compx 0x3554:0xFB0A)](https://github.com/libratbag/libratbag/issues/1828)
+- [Reddit — E-YOOSO X-44 Pro+ (Compx generic)](https://www.reddit.com/r/MouseReview/comments/1u8g81j/got_my_unsupported_eyooso_x44_pro_trimode_8k/)
+
+> VIDが同じでも別プロトコルの機種があります。接続しても設定画面が出ない場合は、その機種は本ソフトの対象外です
+> （本ソフトは応答しないデバイスに対して書き込みを行いません）。
 
 ## プロトコル出典（大事な引用情報）
 
@@ -205,14 +268,24 @@ HANDOFF_PROMPT.md        他言語で再実装するための完全仕様（引�
 - **ポート 3554 が使用中** … `$env:PORT=3555; npm start`
 - **公式ソフトと併用** … 同時に実行しないでください。
 
-## 注意事項
+## 免責事項・注意事項
 
-- 非公式の実装です。設定の書き込みは自己責任でお願いします。
-- 不安な場合はUIの「工場出荷状態に戻す」でいつでも初期化できます。
+本ソフトは個人（sktdr）が開発した**非公式**ツールです。全文は **[DISCLAIMER.md](DISCLAIMER.md)** を参照してください。
+
+- **非提携**: Razer / VXE / Compx / Scyrox / Lamzu / Logitech / ROCCAT / Darmoshark / ATK / Pulsar / Kysona 等の各社とは、提携・承認・後援・その他の関係を一切持ちません。各製品名・会社名は各社の商標または登録商標です
+- **独立実装**: 通信プロトコルは、公開仕様・コミュニティによるリバースエンジニアリング・独自のUSBキャプチャ解析に基づく独立実装です。各社から提供・許諾されたものではありません
+- **自己責任・無保証**: 設定の書き込みにより、設定の喪失、デバイスの誤動作、復旧不能（文鎮化）を含む損害が発生する可能性があります。作者およびコントリビュータは動作を保証せず、いかなる損害についても責任を負いません。MITライセンスの「AS IS」条項が適用されます
+- **使用前の注意**:
+  - 公式ソフトで現在の設定を控える（または本ソフトの「デバイスから設定を読み出す」でバックアップする）
+  - 公式ソフトと同時に起動しない
+  - ファームウェア更新は行わない（本ソフトはFW更新機能を提供しません）
+  - 不安な場合は書き込みを行わず、**読み取りのみ**で使用する
+  - 各国・地域の法令と各社の利用規約を確認し、遵守する
 
 ## ライセンス
 
 - **本アプリ**: MIT（`LICENSE` を参照）
+- **免責事項**: [DISCLAIMER.md](DISCLAIMER.md)（MITライセンスを変更するものではなく、追加の注意喚起です）
 - **同梱コンポーネント**:
   - Electron 38 — MIT
   - Chromium / その他Electron同梱ライブラリ — `LICENSES.chromium.html` に全文収録
