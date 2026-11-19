@@ -24,14 +24,33 @@
 
 const fs = require('fs');
 const path = require('path');
+const os = require('os');
 const crypto = require('crypto');
 const { execFileSync } = require('child_process');
 const asar = require('@electron/asar');
-const sevenZip = require('7zip-bin').path7za;
-
 const root = path.join(__dirname, '..');
 const pkg = require(path.join(root, 'package.json'));
 const electronVersion = require(path.join(root, 'node_modules', 'electron', 'package.json')).version;
+
+// The 7zip-bin npm tarball ships the Linux binary with mode 0644 (no execute
+// bit), so spawning it fails with EACCES on Linux. Fix the mode, and if the
+// binary still cannot run (e.g. a noexec mount), use an executable copy in /tmp.
+let sevenZip = require('7zip-bin').path7za;
+if (process.platform !== 'win32') {
+  try {
+    fs.chmodSync(sevenZip, 0o755);
+  } catch (e) {
+    /* read-only node_modules: the copy below will be used */
+  }
+  try {
+    execFileSync(sevenZip, ['i'], { stdio: 'ignore' });
+  } catch (e) {
+    const tmp = path.join(os.tmpdir(), `sktdr-mouse-7za-${process.pid}-${Date.now()}`);
+    fs.copyFileSync(sevenZip, tmp);
+    fs.chmodSync(tmp, 0o755);
+    sevenZip = tmp;
+  }
+}
 
 const distDir = path.join(root, 'dist');
 const outDir = path.join(distDir, `sktdr-mouse-${pkg.version}-win64`);
