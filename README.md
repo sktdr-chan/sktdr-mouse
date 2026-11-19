@@ -64,22 +64,44 @@ npm start
 配布用ZIPは約118MBになります。
 
 ```powershell
-npm install                # 初回のみ（electron / electron-builder を含む）
+npm install                # 初回のみ
 npm run electron           # 開発実行（ウィンドウが開きます）
-npm run dist               # 配布用フォルダ＋ZIPをビルド
+npm run dist               # 配布用フォルダ＋ZIP＋SHA256をビルド
 ```
 
-- 出力: `dist\sktdr-mouse-1.0.0-win64\`（実行用フォルダ）と `dist\sktdr-mouse-1.0.0-win64.zip`（配布用）
+- 出力: `dist\sktdr-mouse-1.0.0-win64\`（実行用フォルダ）、`.zip`（配布用）、`.zip.sha256`
 - 展開して `sktdr-mouse.exe` をダブルクリックするだけで起動します（インストール不要）
 - 起動時に内部サーバー（`http://localhost:3554`）を同一プロセスで立ち上げ、ネイティブウィンドウで表示します
 - 2つ目の起動は既存ウィンドウにフォーカスします（単一インスタンス）
 - ROCCAT用の設定キャッシュは `%APPDATA%\sktdr-mouse\data` に保存されます
 - **同梱される `sktdr-mouse.exe` は公式 `electron.exe` とバイト単位で同一**（ファイル名のみ変更）。そのため Smart App Control 有効環境でもブロックされません（実機検証済み）
+- ビルドは `electron-builder` を使わず `scripts/build-dist.js` が担当します。WindowsではローカルのElectronを再利用し、Linux/macOSでは公式の win32-x64 ZIPを自動ダウンロードして組み立てるため、**LinuxのCIランナーでもWindows版を生成できます**
+- `node-hid` のネイティブモジュールは `resources/app.asar.unpacked` に展開され、N-APIビルドのためElectron向け再ビルドは不要です
 - コード署名はしていないため、SmartScreenの警告が出る場合は「詳細情報」→「実行」を選択してください
-- 依存の `node-hid` は N-API (v4) ビルドのため、Electron向けの再ビルドは不要です（`build.npmRebuild: false`）
-- ビルド時の署名・アイコン書き換えは無効（`win.signAndEditExecutable: false`）です。これはシンボリックリンク作成権限のないWindows環境でも `electron-builder` が失敗しないようにするためで、動作には影響しません
 - フォルダ内のEXEを個別に改変・再署名すると再びSACのブロック対象になります。更新時は**フォルダごと差し替え**てください
 - ライセンス全文（本アプリ・Electron・Chromium・依存ライブラリ）と `licenses\THIRD_PARTY_NOTICES.txt` が自動的に同梱されます
+
+### 自動リリース（Forgejo Actions）
+
+`.forgejo/workflows/release.yml` が、最新ソースから配布版を作ってForgejoのReleaseへ自動添付します。
+
+| トリガー | 動作 |
+| --- | --- |
+| `main` へpush | ビルドして **`latest` リリース**（タグ `latest`）のZIPを毎回差し替え |
+| `v*` タグをpush | そのバージョンの **Release** を作成し、ZIPとSHA256を添付 |
+| 手動実行 | main と同じ（リポジトリの Actions → Run workflow） |
+
+- 認証はForgejo Actionsの**自動トークン**（`secrets.GITHUB_TOKEN`）を使用します。個人トークンの登録は不要です
+- 実行には**ランナー**が必要です（リポジトリ設定 → Actions → Runners）。Dockerランナー（`runs-on: docker`）を想定し、`node:22-bookworm` コンテナ内でビルドします。Windowsランナーを使う場合は `runs-on` をランナーのラベルに変更してください
+- バージョン付きリリースを出すときは、先に `package.json` の `version` を更新してから `v1.1.0` のようにタグをpushします（不一致の場合はワークフローが失敗します）
+- 手元から直接発行する場合:
+
+  ```powershell
+  $env:FORGEJO_TOKEN = "<write:repository権限のトークン>"
+  npm run release -- --tag v1.1.0
+  ```
+
+- 添付ファイルの上限（Forgejoの `app.ini` の `[attachment] MAX_SIZE`）が118MBより小さい場合、アップロードは413で失敗します。管理者に上限を上げてもらうか、ZIPを外部ストレージに置いてReleaseからリンクしてください
 
 ## 設定できる項目
 
@@ -117,6 +139,8 @@ data/
   <profileId>.json       Swarm方式機のホスト側設定キャッシュ（自動生成）
 public/                  UI — プロファイルのスキーマから画面を自動生成・デバイス切替
 scripts/
+  build-dist.js         配布版（Electronフォルダ＋ZIP＋SHA256）のビルド
+  publish-release.js    Forgejo Releaseの作成・アセット添付
   probe.js               Scyrox診断（読み取りのみ／--write-test）
   probe-roccat.js        Kone Pro Air診断（read-only）
   probe-darmoshark*.js   Darmoshark診断（1〜14: 探索→全コマンド検証の段階的記録）
@@ -164,7 +188,8 @@ HANDOFF_PROMPT.md        他言語で再実装するための完全仕様（引�
 | --- | --- |
 | `npm start` | 設定ツールを起動（ブラウザ版） |
 | `npm run electron` | 設定ツールをElectronウィンドウで起動（開発用） |
-| `npm run dist` | 配布用フォルダ＋ZIPをビルド |
+| `npm run dist` | 配布用フォルダ＋ZIP＋SHA256をビルド |
+| `npm run release -- --tag v1.0.0` | ビルドしてForgejoのReleaseへ添付（`FORGEJO_TOKEN` が必要） |
 | `npm run probe` | デバイス検出・現在設定のダンプ（読み取りのみ） |
 | `node scripts/probe.js --write-test` | 書き込みパスの検証（現在値を書き戻すだけの無害なテスト） |
 

@@ -9,34 +9,16 @@
     "start": "node server.js",
     "electron": "electron .",
     "probe": "node scripts/probe.js",
-    "dist": "electron-builder --win --dir && node scripts/make-folder-build.js"
+    "dist": "node scripts/build-dist.js",
+    "release": "node scripts/build-dist.js && node scripts/publish-release.js"
   },
   "dependencies": {
     "node-hid": "^3.4.0"
   },
   "devDependencies": {
-    "electron": "^38.0.0",
-    "electron-builder": "^26.0.0"
-  },
-  "build": {
-    "appId": "com.sktdr.mouse",
-    "productName": "sktdr-mouse",
-    "asar": true,
-    "npmRebuild": false,
-    "electronDist": "node_modules/electron/dist",
-    "asarUnpack": [
-      "node_modules/node-hid/**"
-    ],
-    "files": [
-      "server.js",
-      "core/**/*",
-      "devices/**/*",
-      "public/**/*",
-      "electron/**/*",
-      "package.json"
-    ],
-    "win": {
-      "signAndEditExecutable": false
-    }
+    "@electron/asar": "^3.2.18",
+    "@electron/get": "^2.0.3",
+    "7zip-bin": "^5.2.0",
+    "electron": "^38.0.0"
   }
 }

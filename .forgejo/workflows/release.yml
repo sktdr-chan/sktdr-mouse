@@ -1,0 +1,70 @@
+name: Build Windows distribution
+
+# - push to main      → build + update the rolling "latest" release
+# - push a tag (v*)   → build + create/update that versioned release
+# - manual run        → same as a main push
+#
+# Uses the automatic Forgejo Actions token (secrets.GITHUB_TOKEN) to create
+# the release and upload the assets; no personal token is needed in CI.
+#
+# The job runs on a Docker runner with a pinned Node image and builds the
+# win32-x64 Electron distribution on Linux (the official Electron zip is
+# downloaded via @electron/get). If your runner uses another label, change
+# `runs-on` below. For a Windows runner, also remove the `container:` block
+# and make sure Node.js 22 is installed on the runner.
+
+on:
+  push:
+    branches:
+      - main
+    tags:
+      - 'v*'
+  workflow_dispatch:
+
+concurrency:
+  group: release-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  build:
+    runs-on: docker
+    container:
+      image: node:22-bookworm
+    timeout-minutes: 30
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Check tag matches package.json
+        if: startsWith(github.ref, 'refs/tags/')
+        run: |
+          expected="v$(node -p "require('./package.json').version")"
+          if [ "${{ github.ref_name }}" != "$expected" ]; then
+            echo "tag ${{ github.ref_name }} does not match package.json version ($expected)"
+            exit 1
+          fi
+
+      - name: Install dependencies
+        env:
+          ELECTRON_SKIP_BINARY_DOWNLOAD: '1'
+        run: npm ci
+
+      - name: Build folder distribution
+        run: npm run dist
+
+      # Keep the rolling release's tag on the commit it was built from, so the
+      # "source code" link on the release page matches the attached ZIP.
+      - name: Move "latest" tag
+        if: startsWith(github.ref, 'refs/heads/')
+        run: |
+          git tag -f latest
+          git push -f origin latest
+
+      - name: Publish release
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          case "${{ github.ref }}" in
+            refs/tags/*) node scripts/publish-release.js --tag "${{ github.ref_name }}" ;;
+            *)           node scripts/publish-release.js --tag latest ;;
+          esac
