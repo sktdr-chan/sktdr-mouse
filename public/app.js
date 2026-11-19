@@ -41,7 +41,7 @@ let lang = LANGS.includes(localStorage.getItem('uiLang') || '') ? localStorage.g
 
 const I18N = {
   ja: {
-    appTitle: 'マウス設定ツール',
+    appTitle: 'sktdr-mouse',
     brandSub: '設定ツール',
     deviceInfo: 'デバイス情報',
     log: 'ログ',
@@ -102,7 +102,7 @@ const I18N = {
     keepAliveOff: 'スリープ防止OFF — 通常のスリープ動作に戻りました',
   },
   en: {
-    appTitle: 'Mouse Settings Tool',
+    appTitle: 'sktdr-mouse',
     brandSub: 'CONFIG',
     deviceInfo: 'Device Information',
     log: 'Log',
@@ -163,7 +163,7 @@ const I18N = {
     keepAliveOff: 'Keep-awake OFF — normal sleep behavior restored',
   },
   zh: {
-    appTitle: '鼠标设置工具',
+    appTitle: 'sktdr-mouse',
     brandSub: '设置',
     deviceInfo: '设备信息',
     log: '日志',
@@ -820,8 +820,8 @@ function buildUi() {
   const s = slot();
   if (!s.schema) return;
   builtFor = s.schema.id;
-  $('#brandModel').textContent = s.schema.meta.name;
-  document.title = `${s.schema.meta.name} — ${t('appTitle')}`;
+  // brand stays "sktdr-mouse"; the active model is shown in the device chips
+  document.title = t('appTitle');
   const container = $('#sections');
   container.innerHTML = '';
 
@@ -1033,10 +1033,6 @@ function buildSetting(s) {
         badge.className = 'dpi-badge';
         badge.textContent = String(i + 1);
 
-        const flag = document.createElement('span');
-        flag.className = 'cur-flag';
-        flag.textContent = t('inUse');
-
         const controls = document.createElement('div');
         controls.className = 'dpi-controls';
         const number = document.createElement('input');
@@ -1056,11 +1052,11 @@ function buildSetting(s) {
         color.title = t('stageColor');
 
         const use = document.createElement('button');
-        use.className = 'btn small';
+        use.className = 'btn small dpi-use';
         use.textContent = t('use');
         use.title = t('useTooltip');
 
-        r.append(badge, controls, color, use, flag);
+        r.append(badge, controls, color, use);
         stages.appendChild(r);
 
         const commit = () => {
@@ -1082,7 +1078,11 @@ function buildSetting(s) {
         });
         use.addEventListener('click', () => {
           if (!applyModeImmediate) {
-            $$('.dpi-row', stages).forEach((x) => x.classList.toggle('current', x === r));
+            $$('.dpi-row', stages).forEach((x) => {
+              x.classList.toggle('current', x === r);
+              const b = $('button', x);
+              if (b) b.textContent = x === r ? t('inUse') : t('use');
+            });
             const curEl = $(`#dpi-current-${s.key}`);
             if (curEl) curEl.textContent = t('currentStage', i + 1);
           }
@@ -1263,7 +1263,10 @@ function renderDeviceChips() {
     chip.className =
       'chip device-chip' +
       (isOnline ? (d.id === activeDevice ? ' active' : ' chip-ok') : ' chip-off');
-    chip.textContent = d.name + (isOnline ? '' : t('chipOfflineSuffix'));
+    const dot = document.createElement('span');
+    dot.className = 'dev-dot' + (isOnline ? ' on' : '');
+    chip.appendChild(dot);
+    chip.appendChild(document.createTextNode(d.name + (isOnline ? '' : t('chipOfflineSuffix'))));
     chip.title = d.id;
     chip.addEventListener('click', async () => {
       if (busy || d.id === activeDevice) return;
@@ -1498,6 +1501,7 @@ function renderSetting(s, config, online) {
         const range = $('input[type="range"]', row);
         const color = $('input[type="color"]', row);
         const use = $('button', row);
+        if (use) use.textContent = i === d.current ? t('inUse') : t('use');
         if (!rowPending) {
           if (document.activeElement !== number && String(rec.value) !== number.value) {
             number.value = String(rec.value);

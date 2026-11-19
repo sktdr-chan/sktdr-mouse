@@ -1,7 +1,7 @@
 {
-  "name": "scyrox-v8-config",
+  "name": "sktdr-mouse",
   "version": "1.0.0",
-  "description": "Scyrox V8 wireless mouse configuration software",
+  "description": "Profile-driven universal mouse configuration tool",
   "main": "server.js",
   "scripts": {
     "start": "node server.js",

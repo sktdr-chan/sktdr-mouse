@@ -52,6 +52,8 @@ html, body {
   font-weight: 700;
   letter-spacing: 1.5px;
   color: var(--text);
+  flex: none;
+  white-space: nowrap;
 }
 .brand em {
   font-style: normal;
@@ -73,21 +75,68 @@ html, body {
   appearance: none;
   cursor: pointer;
   font-family: inherit;
+  /* pressable device chips keep a white fill + visible outline + shadow so
+     they never look like the flat status pills (connection / battery) */
   border: 1px solid var(--card-border);
-  background: var(--card-inner);
-  color: var(--text-dim);
+  background: #ffffff;
+  color: var(--text);
+  box-shadow: 0 1px 2px rgba(17, 24, 39, 0.07);
+  transition: border-color 0.15s ease, color 0.15s ease, box-shadow 0.15s ease;
 }
+.chip.device-chip.chip-ok { color: var(--text); background: #ffffff; border-color: var(--card-border); }
+.chip.device-chip.chip-off { color: var(--text-dim); background: #ffffff; border-color: var(--card-border); }
+.chip.device-chip:disabled { cursor: default; opacity: 0.55; box-shadow: none; }
+.device-chip:hover:not(:disabled):not(.active) {
+  border-color: var(--accent);
+  color: var(--accent);
+  box-shadow: 0 2px 8px rgba(10, 124, 255, 0.15);
+}
+.device-chip:active:not(:disabled) { transform: translateY(1px); }
+
+/* small link-state dot inside device chips (interactive-only element) */
+.dev-dot {
+  display: inline-block;
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  margin-right: 6px;
+  vertical-align: 1px;
+  background: #b9c4d0;
+}
+.dev-dot.on { background: var(--ok); box-shadow: 0 0 0 2px rgba(20, 160, 90, 0.18); }
 
 .chip {
   padding: 6px 12px;
   border-radius: 999px;
   font-size: 12.5px;
   font-weight: 600;
-  border: 1px solid var(--card-border);
-  background: var(--card-inner);
+  border: 1px solid transparent;
+  background: var(--bg-soft);
   color: var(--text-dim);
   white-space: nowrap;
 }
+
+/* pressable chips (Manage, apply-mode) — clearly button-like, unlike the
+   flat display chips (connection / battery / device chips) */
+.chip-btn {
+  appearance: none;
+  cursor: pointer;
+  font-family: inherit;
+  border: 1px solid rgba(10, 124, 255, 0.55);
+  background: var(--accent-soft);
+  color: var(--accent);
+  box-shadow: 0 1px 3px rgba(17, 24, 39, 0.08);
+  transition: background 0.15s ease, box-shadow 0.15s ease, transform 0.05s ease;
+}
+.chip-btn:hover { background: rgba(10, 124, 255, 0.16); border-color: var(--accent); }
+.chip-btn:active { transform: translateY(1px); box-shadow: none; }
+
+/* status pills (connection / battery): flat labels, never look clickable */
+.chip-ok   { color: var(--ok); background: rgba(20, 160, 90, 0.10); border-color: rgba(20, 160, 90, 0.28); }
+.chip-warn { color: var(--warn); background: rgba(255, 180, 84, 0.16); border-color: rgba(168, 98, 0, 0.28); }
+.chip-off  { color: var(--text-dim); background: var(--bg-soft); border-color: transparent; }
+.chip-bad  { color: var(--danger); background: rgba(217, 45, 60, 0.08); border-color: rgba(217, 45, 60, 0.28); }
+
 .chip.active,
 .device-chip.active {
   /* the device whose settings page is currently open: bold near-black ring
@@ -160,7 +209,7 @@ html, body {
 
 .banner {
   margin: 14px auto 0;
-  max-width: 920px;
+  max-width: 1380px;
   padding: 12px 18px;
   border-radius: var(--radius);
   border: 1px solid rgba(168, 98, 0, 0.35);
@@ -179,11 +228,17 @@ html, body {
 /* ---------- layout ---------- */
 
 #app {
-  max-width: 920px;
+  max-width: 1380px;
   margin: 18px auto 60px;
   padding: 0 16px;
-  display: grid;
-  gap: 16px;
+  /* floating cards that flow into 2–3 columns when the window is wide,
+     reducing vertical scrolling; narrow windows fall back to one column */
+  columns: 380px;
+  column-gap: 16px;
+}
+#app > * {
+  break-inside: avoid;
+  margin-bottom: 16px;
 }
 #app.disabled { opacity: 0.5; pointer-events: none; }
 #app.busy { pointer-events: none; }
@@ -193,7 +248,12 @@ html, body {
   border: 1px solid var(--card-border);
   border-radius: var(--radius);
   padding: 18px 20px;
-  box-shadow: 0 6px 20px rgba(17, 24, 39, 0.06);
+  box-shadow:
+    0 1px 2px rgba(17, 24, 39, 0.05),
+    0 10px 28px rgba(17, 24, 39, 0.08);
+}
+@media (min-width: 1100px) {
+  #app { columns: 400px 3; }
 }
 
 .card h2 {
@@ -433,8 +493,9 @@ input[type="color"] {
 .dpi-row {
   display: flex;
   align-items: center;
-  gap: 12px;
-  padding: 8px 12px;
+  flex-wrap: wrap;
+  gap: 8px;
+  padding: 8px 10px;
   border-radius: 10px;
   background: var(--card-inner);
   border: 1px solid var(--card-border);
@@ -459,27 +520,25 @@ input[type="color"] {
 }
 .dpi-row.current .dpi-badge { color: var(--accent); border-color: var(--accent); }
 
-.dpi-row .cur-flag {
-  /* reserved slot at the END of the row (right of the slider): the label
-     only becomes visible on the active row, so nothing shifts horizontally */
-  display: inline-block;
-  width: 48px;
+/* the "Use" button doubles as the active-stage indicator: on the current
+   row it reads "使用中 / In use". A fixed width keeps every row identical,
+   so the slider never shifts. */
+.dpi-use {
+  min-width: 64px;
   flex: none;
-  text-align: right;
-  font-size: 11px;
-  font-weight: 700;
-  color: var(--accent);
-  letter-spacing: 1px;
-  visibility: hidden;
-  white-space: nowrap;
 }
-.dpi-row.current .cur-flag { visibility: visible; }
+.dpi-row.current .dpi-use {
+  border-color: var(--accent);
+  color: var(--accent);
+  background: var(--accent-soft);
+  font-weight: 700;
+}
 
-.dpi-controls { display: flex; align-items: center; gap: 10px; flex: 1; }
-.dpi-controls input[type="number"] { width: 96px; text-align: right; }
-.dpi-controls input[type="range"] { flex: 1; min-width: 120px; }
+.dpi-controls { display: flex; align-items: center; gap: 8px; flex: 1; min-width: 140px; }
+.dpi-controls input[type="number"] { width: 72px; flex: none; text-align: right; }
+.dpi-controls input[type="range"] { flex: 1; min-width: 70px; }
 
-.dpi-row input[type="color"] { margin-left: auto; }
+.dpi-row input[type="color"] { margin-left: auto; width: 40px; flex: none; }
 
 /* ---------- log ---------- */
 
