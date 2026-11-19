@@ -1,13 +1,14 @@
 name: Publish to GitHub
 
 on:
-  release:
-    types: [published]
+  push:
+    tags:
+      - 'v*'
   workflow_dispatch:
     inputs:
       tag:
         description: 'Tag to publish (e.g. v0.1.0)'
-        required: true
+        required: false
         type: string
 
 jobs:
@@ -17,10 +18,10 @@ jobs:
       - name: Set tag name
         id: tag
         run: |
-          if [ "${{ github.event_name }}" = "workflow_dispatch" ]; then
+          if [ -n "${{ inputs.tag }}" ]; then
             echo "name=${{ inputs.tag }}" >> $GITHUB_OUTPUT
           else
-            echo "name=${{ github.event.release.tag_name }}" >> $GITHUB_OUTPUT
+            echo "name=${GITHUB_REF#refs/tags/}" >> $GITHUB_OUTPUT
           fi
 
       - name: Checkout
@@ -37,16 +38,28 @@ jobs:
           git config user.name "forgejo-actions"
           git config user.email "actions@forgejo.local"
           git remote add github https://x-access-token:${GH_TOKEN}@github.com/sktdr-chan/sktdr-mouse.git
-          # detached HEADでも動くように明示指定 + force
           git push github HEAD:refs/heads/main --force
           git push github "$TAG" --force
 
-      - name: Download release assets from Forgejo
+      - name: Wait for Forgejo Release and download assets
         env:
           FORGEJO_TOKEN: ${{ secrets.FG_SKMOUSE_TOKEN }}
           TAG: ${{ steps.tag.outputs.name }}
         run: |
           mkdir -p assets
+          echo "Waiting for Forgejo release ${TAG}..."
+          for i in $(seq 1 30); do
+            STATUS=$(curl -s -o /dev/null -w "%{http_code}" \
+              -H "Authorization: token ${FORGEJO_TOKEN}" \
+              "https://forgejo.pw2.org/api/v1/repos/sktdr/sktdr-mouse/releases/tags/${TAG}")
+            if [ "$STATUS" = "200" ]; then
+              echo "Release found."
+              break
+            fi
+            echo "Not ready yet (${STATUS}), waiting 10s... ($i/30)"
+            sleep 10
+          done
+
           curl -s -H "Authorization: token ${FORGEJO_TOKEN}" \
             "https://forgejo.pw2.org/api/v1/repos/sktdr/sktdr-mouse/releases/tags/${TAG}" \
             | jq -r '.assets[].browser_download_url' \
@@ -61,10 +74,9 @@ jobs:
           GH_TOKEN: ${{ secrets.GH_SKMOUSE_TOKEN }}
           TAG: ${{ steps.tag.outputs.name }}
         run: |
-          # gh コマンドがなければインストール
           if ! command -v gh &> /dev/null; then
             curl -sL https://github.com/cli/cli/releases/download/v2.62.0/gh_2.62.0_linux_amd64.tar.gz | tar xz
-            sudo mv gh_2.62.0_linux_amd64/bin/gh /usr/local/bin/
+            sudo mv gh_2.62.0_linux_amd64/bin/gh /usr/local/bin/ || mv gh_2.62.0_linux_amd64/bin/gh /usr/local/bin/
           fi
 
           gh release create "$TAG" \
