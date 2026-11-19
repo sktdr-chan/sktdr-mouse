@@ -1,9 +1,10 @@
 name: Publish to GitHub
 
 on:
-  push:
-    tags:
-      - 'v*'
+  workflow_run:
+    workflows: ["Build Windows distribution"]   # release.yml の name と完全一致
+    types:
+      - completed
   workflow_dispatch:
     inputs:
       tag:
@@ -13,6 +14,8 @@ on:
 
 jobs:
   publish:
+    # release.yml が成功したとき、または手動実行時のみ
+    if: ${{ github.event.workflow_run.conclusion == 'success' || github.event_name == 'workflow_dispatch' }}
     runs-on: linux
     steps:
       - name: Set tag name
@@ -20,6 +23,14 @@ jobs:
         run: |
           if [ -n "${{ inputs.tag }}" ]; then
             echo "name=${{ inputs.tag }}" >> $GITHUB_OUTPUT
+          elif [ -n "${{ github.event.workflow_run.head_branch }}" ]; then
+            # workflow_run の場合、元のrefからタグ名を取得
+            if [[ "${{ github.event.workflow_run.head_branch }}" == v* ]]; then
+              echo "name=${{ github.event.workflow_run.head_branch }}" >> $GITHUB_OUTPUT
+            else
+              # ブランチpushの場合は latest など
+              echo "name=latest" >> $GITHUB_OUTPUT
+            fi
           else
             echo "name=${GITHUB_REF#refs/tags/}" >> $GITHUB_OUTPUT
           fi
@@ -41,14 +52,14 @@ jobs:
           git push github HEAD:refs/heads/main --force
           git push github "$TAG" --force
 
-      - name: Wait for Forgejo Release and download assets
+      - name: Download release assets from Forgejo
         env:
           FORGEJO_TOKEN: ${{ secrets.FG_SKMOUSE_TOKEN }}
           TAG: ${{ steps.tag.outputs.name }}
         run: |
           mkdir -p assets
           echo "Waiting for Forgejo release ${TAG}..."
-          for i in $(seq 1 30); do
+          for i in $(seq 1 20); do
             STATUS=$(curl -s -o /dev/null -w "%{http_code}" \
               -H "Authorization: token ${FORGEJO_TOKEN}" \
               "https://forgejo.pw2.org/api/v1/repos/sktdr/sktdr-mouse/releases/tags/${TAG}")
@@ -56,8 +67,8 @@ jobs:
               echo "Release found."
               break
             fi
-            echo "Not ready yet (${STATUS}), waiting 10s... ($i/30)"
-            sleep 10
+            echo "Not ready yet (${STATUS}), waiting 5s... ($i/20)"
+            sleep 5
           done
 
           curl -s -H "Authorization: token ${FORGEJO_TOKEN}" \
@@ -76,16 +87,13 @@ jobs:
         run: |
           if ! command -v gh &> /dev/null; then
             curl -sL https://github.com/cli/cli/releases/download/v2.62.0/gh_2.62.0_linux_amd64.tar.gz | tar xz
-            sudo mv gh_2.62.0_linux_amd64/bin/gh /usr/local/bin/ || mv gh_2.62.0_linux_amd64/bin/gh /usr/local/bin/
+            mv gh_2.62.0_linux_amd64/bin/gh /usr/local/bin/ || sudo mv gh_2.62.0_linux_amd64/bin/gh /usr/local/bin/
           fi
 
-          # 既存のReleaseを削除
           gh release delete "$TAG" --repo sktdr-chan/sktdr-mouse --yes || true
 
-          # 新規作成
           gh release create "$TAG" \
             --repo sktdr-chan/sktdr-mouse \
             --title "$TAG" \
             --notes "Release from Forgejo" \
             assets/*
-            
