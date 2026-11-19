@@ -1,0 +1,24 @@
+name: Publish tagged version to GitHub
+
+on:
+  push:
+    tags:
+      - 'v*'
+
+jobs:
+  publish:
+    runs-on: docker
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Push tag to GitHub
+        env:
+          GH_TOKEN: ${{ secrets.GH_SKMOUSE_TOKEN }}
+        run: |
+          git config user.name "forgejo-actions"
+          git config user.email "actions@forgejo.local"
+          git remote add github https://x-access-token:${GH_TOKEN}@github.com/sktdr-chan/sktdr-mouse.git
+          git push github ${{ github.ref }}
