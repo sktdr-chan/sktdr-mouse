@@ -27,6 +27,15 @@ const { execFileSync } = require('child_process');
 
 const root = path.join(__dirname, '..');
 const pkg = require(path.join(root, 'package.json'));
+const distDir = path.join(root, 'dist');
+
+// Written by scripts/build-dist.js: commit id + generated file names.
+let buildInfo = null;
+try {
+  buildInfo = JSON.parse(fs.readFileSync(path.join(distDir, 'build-info.json'), 'utf8'));
+} catch (e) {
+  /* older builds have no build-info.json */
+}
 
 function arg(name) {
   const i = process.argv.indexOf(`--${name}`);
@@ -64,7 +73,12 @@ const refType = process.env.GITHUB_REF_TYPE || process.env.FORGEJO_REF_TYPE || '
 const refName = process.env.GITHUB_REF_NAME || process.env.FORGEJO_REF_NAME || '';
 const tag = String(arg('tag') || (refType === 'tag' ? refName : 'latest'));
 
-const zipPath = String(arg('zip') || path.join(root, 'dist', `sktdr-mouse-${pkg.version}-win64.zip`));
+const zipPath = String(
+  arg('zip') ||
+    (buildInfo && buildInfo.zip
+      ? path.join(distDir, buildInfo.zip)
+      : path.join(distDir, `sktdr-mouse-${pkg.version}-win64.zip`))
+);
 const shaPath = zipPath + '.sha256';
 
 function die(msg) {
@@ -85,7 +99,8 @@ if (!dryRun && !token) {
 
 const api = `${server}/api/v1/repos/${repo}`;
 const zipSize = fs.statSync(zipPath).size;
-const shortSha = commit ? commit.slice(0, 7) : 'unknown';
+const shortSha = (buildInfo && buildInfo.shortCommit) || (commit ? commit.slice(0, 7) : 'unknown');
+const buildLabel = (buildInfo && buildInfo.label) || shortSha;
 const isLatest = tag === 'latest';
 
 function sha256(file) {
@@ -95,18 +110,21 @@ function sha256(file) {
 }
 
 const hash = sha256(zipPath);
-// Fixed asset names for the rolling "latest" channel.
-const assetName = isLatest ? 'sktdr-mouse-win64.zip' : path.basename(zipPath);
+// Commit id is part of the file name; the tag release also carries its tag.
+const assetName = isLatest
+  ? (buildInfo && buildInfo.zip) || path.basename(zipPath)
+  : `sktdr-mouse-${tag}-${buildLabel}-win64.zip`;
 const shaName = `${assetName}.sha256`;
 
+const commitUrl = commit ? `${server}/${repo}/commit/${commit}` : '';
 const body = [
   isLatest
     ? `## sktdr-mouse 最新ビルド（main / ${shortSha}）`
-    : `## sktdr-mouse ${tag}`,
+    : `## sktdr-mouse ${tag}（${shortSha}）`,
   '',
-  `- バージョン: ${pkg.version}`,
-  `- コミット: \`${shortSha}\``,
-  `- ビルド日時: ${new Date().toISOString()}`,
+  commitUrl ? `- コミット: [\`${shortSha}\`](${commitUrl})` : `- コミット: \`${shortSha}\``,
+  ...(isLatest ? [] : [`- タグ: ${tag}`]),
+  `- ビルド日時: ${(buildInfo && buildInfo.builtAt) || new Date().toISOString()}`,
   '- 対象: Windows 10/11 x64（インストール不要）',
   '',
   '### 使い方',
@@ -123,6 +141,10 @@ const body = [
   '> 展開先のEXEを改変・再署名すると Smart App Control にブロックされる場合があります。',
   '',
 ].join('\n');
+
+const releaseName = isLatest
+  ? `Latest build (main / ${shortSha})`
+  : `sktdr-mouse ${tag} (${shortSha})`;
 
 async function apiCall(method, url, data) {
   const res = await fetch(url, {
@@ -181,7 +203,7 @@ function upload(assetUrl, file) {
 }
 
 async function main() {
-  console.log(`[publish] ${repo} @ ${tag}  (${(zipSize / 1024 / 1024).toFixed(1)} MB)`);
+  console.log(`[publish] ${repo} @ ${tag} (commit ${shortSha}, ${(zipSize / 1024 / 1024).toFixed(1)} MB)`);
   console.log(`[publish] asset: ${assetName}`);
   console.log(`[publish] sha256: ${hash}`);
 
@@ -201,7 +223,7 @@ async function main() {
     console.log('[publish] creating release…');
     release = await apiCall('POST', `${api}/releases`, {
       tag_name: tag,
-      name: isLatest ? 'Latest build (main)' : `sktdr-mouse ${tag}`,
+      name: releaseName,
       body,
       draft: false,
       prerelease: false,
@@ -210,14 +232,21 @@ async function main() {
   } else {
     console.log(`[publish] updating existing release (id ${release.id})…`);
     release = await apiCall('PATCH', `${api}/releases/${release.id}`, {
-      name: isLatest ? 'Latest build (main)' : `sktdr-mouse ${tag}`,
+      name: releaseName,
       body,
     });
   }
 
   const assets = await apiCall('GET', `${api}/releases/${release.id}/assets`);
+  // Asset names contain the commit, so also remove assets from older builds.
+  const isOurAsset = (name) =>
+    name === assetName ||
+    name === shaName ||
+    /^sktdr-mouse-.*-win64\.zip(?:\.sha256)?$/.test(name) ||
+    name === 'sktdr-mouse-win64.zip' ||
+    name === 'sktdr-mouse-win64.zip.sha256';
   for (const a of assets || []) {
-    if (a.name === assetName || a.name === shaName) {
+    if (isOurAsset(a.name)) {
       console.log(`[publish] replacing old asset: ${a.name}`);
       await apiCall('DELETE', `${api}/releases/${release.id}/assets/${a.id}`);
     }

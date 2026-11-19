@@ -69,7 +69,8 @@ npm run electron           # 開発実行（ウィンドウが開きます）
 npm run dist               # 配布用フォルダ＋ZIP＋SHA256をビルド
 ```
 
-- 出力: `dist\sktdr-mouse-1.0.0-win64\`（実行用フォルダ）、`.zip`（配布用）、`.zip.sha256`
+- 出力: `dist\sktdr-mouse-<commit>-win64\`（実行用フォルダ）、`.zip`（配布用）、`.zip.sha256`
+  - `<commit>` はビルド元コミットの短縮SHA（例: `sktdr-mouse-4bad54c-win64.zip`）。未コミットの変更があるローカルビルドは `-dirty` 付きになります
 - 展開して `sktdr-mouse.exe` をダブルクリックするだけで起動します（インストール不要）
 - 起動時に内部サーバー（`http://localhost:3554`）を同一プロセスで立ち上げ、ネイティブウィンドウで表示します
 - 2つ目の起動は既存ウィンドウにフォーカスします（単一インスタンス）
@@ -91,6 +92,10 @@ npm run dist               # 配布用フォルダ＋ZIP＋SHA256をビルド
 | `v*` タグをpush | そのバージョンの **Release** を作成し、ZIPとSHA256を添付 |
 | 手動実行 | main と同じ（リポジトリの Actions → Run workflow） |
 
+- アセット名には**コミットID**が入ります
+  - `latest`: `sktdr-mouse-<commit>-win64.zip`（例: `sktdr-mouse-4bad54c-win64.zip`）
+  - バージョンタグ: `sktdr-mouse-<tag>-<commit>-win64.zip`（例: `sktdr-mouse-v1.1.0-4bad54c-win64.zip`）
+  - 同じリリース内の旧アセットは自動削除されるため、コミットごとのZIPが溜まりません
 - 認証はForgejo Actionsの**自動トークン**（`secrets.GITHUB_TOKEN`）を使用します。個人トークンの登録は不要です
 - 実行には**ランナー**が必要です（リポジトリ設定 → Actions → Runners）。**ホストモード**のランナー（ラベル `linux`、Node.js 22・git・curl 導入済み）を想定しています。Dockerランナーを使う場合は `runs-on` を `docker` に戻し、`container: image: node:22-bookworm` を追加してください
 - バージョン付きリリースを出すときは、先に `package.json` の `version` を更新してから `v1.1.0` のようにタグをpushします（不一致の場合はワークフローが失敗します）

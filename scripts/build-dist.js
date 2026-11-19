@@ -53,9 +53,32 @@ if (process.platform !== 'win32') {
 }
 
 const distDir = path.join(root, 'dist');
-const outDir = path.join(distDir, `sktdr-mouse-${pkg.version}-win64`);
-const zipPath = path.join(distDir, `sktdr-mouse-${pkg.version}-win64.zip`);
+
+// Use the source commit as the build version (package.json's 1.0.0 is just a
+// base version). In CI GITHUB_SHA identifies the checkout; locally we ask git.
+function gitOut(args) {
+  try {
+    return execFileSync('git', args, {
+      cwd: root,
+      encoding: 'utf8',
+      stdio: ['ignore', 'pipe', 'ignore'],
+    }).trim();
+  } catch (e) {
+    return '';
+  }
+}
+const envCommit = (process.env.GITHUB_SHA || process.env.FORGEJO_SHA || '').trim();
+const fullCommit = envCommit || gitOut(['rev-parse', 'HEAD']) || '';
+const shortCommit = fullCommit ? fullCommit.slice(0, 7) : 'nocommit';
+// A local build with uncommitted changes gets a -dirty marker; CI is clean.
+const dirty = !envCommit && gitOut(['status', '--porcelain', '--untracked-files=no']) !== '';
+const buildLabel = dirty ? `${shortCommit}-dirty` : shortCommit;
+
+const folderName = `sktdr-mouse-${buildLabel}-win64`;
+const outDir = path.join(distDir, folderName);
+const zipPath = path.join(distDir, `${folderName}.zip`);
 const shaPath = zipPath + '.sha256';
+const buildInfoPath = path.join(distDir, 'build-info.json');
 const stagingDir = path.join(distDir, '.staging');
 
 // application files (same set the app needs at runtime)
@@ -257,11 +280,46 @@ async function main() {
   const hash = await sha256(zipPath);
   fs.writeFileSync(shaPath, `${hash}  ${path.basename(zipPath)}\r\n`);
 
+  // Metadata consumed by scripts/publish-release.js (commit id, asset names).
+  fs.writeFileSync(
+    buildInfoPath,
+    JSON.stringify(
+      {
+        version: pkg.version,
+        commit: fullCommit,
+        shortCommit,
+        dirty,
+        label: buildLabel,
+        builtAt: new Date().toISOString(),
+        folder: folderName,
+        zip: path.basename(zipPath),
+        sha256: hash,
+      },
+      null,
+      2
+    ) + '\n'
+  );
+
   fs.rmSync(stagingDir, { recursive: true, force: true });
   // left over from older electron-builder builds
   fs.rmSync(path.join(distDir, 'win-unpacked'), { recursive: true, force: true });
 
+  // keep only the current build (old commit-named folders/zips would pile up)
+  const keep = new Set([
+    folderName,
+    path.basename(zipPath),
+    path.basename(shaPath),
+    path.basename(buildInfoPath),
+  ]);
+  for (const name of fs.readdirSync(distDir)) {
+    if (keep.has(name)) continue;
+    if (/^sktdr-mouse-.*-win64(?:\.zip(?:\.sha256)?)?$/.test(name)) {
+      fs.rmSync(path.join(distDir, name), { recursive: true, force: true });
+    }
+  }
+
   const mb = (fs.statSync(zipPath).size / 1024 / 1024).toFixed(1);
+  log(`build: ${buildLabel}${fullCommit ? ` (${fullCommit.slice(0, 12)})` : ''}`);
   log(`done: ${path.relative(root, zipPath)} (${mb} MB)`);
   log(`sha256: ${hash}`);
 }
