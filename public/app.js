@@ -33,6 +33,493 @@ let busy = false;
 let resetArmed = null;
 let builtFor = null; // schema id the settings DOM was built for
 
+/* ------------------------------------------------------------------ i18n */
+
+const LANGS = ['ja', 'en', 'zh'];
+const LANG_NAMES = { ja: '日本語', en: 'English', zh: '中文' };
+let lang = LANGS.includes(localStorage.getItem('uiLang') || '') ? localStorage.getItem('uiLang') : 'ja';
+
+const I18N = {
+  ja: {
+    appTitle: 'マウス設定ツール',
+    brandSub: '設定ツール',
+    deviceInfo: 'デバイス情報',
+    log: 'ログ',
+    manage: '管理',
+    manageTitle: '対応するマウス',
+    manageHint:
+      '接続中のマウスが上部に表示されます。非アクティブ（切断・スリープ）になったマウスは灰色になり、1分間再接続されないと自動で消えます。',
+    language: '表示言語',
+    battery: 'バッテリー',
+    applyModeTip: '変更の適用方法：即時適用か、保存ボタンでまとめて適用か',
+    applyImmediate: '即時適用',
+    applyManual: '保存ボタン',
+    apply: '適用',
+    applyWithCount: '適用 ({1})',
+    applyAllTip: '保留中の変更をデバイスに適用',
+    close: '閉じる',
+    notConnected: '未接続',
+    sleeping: 'スリープ中',
+    connected: '接続済み',
+    noDevices: '対応デバイスが見つかりません。USB接続すると自動で認識します…',
+    deviceNotConnected: '{1} は未接続です。USB接続すると自動で認識します…',
+    offlineBanner:
+      'マウスがオフラインです。マウスを動かすかクリックしてスリープを解除してください（電源スイッチ・モード切替も確認してください）。',
+    saved: '保存しました',
+    applied: '適用しました',
+    applyFailedSome: '{1} 件失敗しました（保留中）',
+    errorPrefix: 'エラー: {1}',
+    commError: '通信エラー: {1}',
+    readFailed: '読み出し失敗: {1}',
+    readDevice: 'デバイスから読み出し',
+    readDone: '読み出しました',
+    protocolSource: 'プロトコル出典:',
+    stageCount: 'ステージ数',
+    stagesOption: '{1} 段階',
+    activeStage: 'アクティブステージ',
+    currentStage: '現在のステージ: {1}',
+    stageColor: 'ステージの色',
+    use: '使用',
+    useTooltip: 'このステージに切り替え',
+    inUse: '使用中',
+    armedConfirm: '本当に実行する場合、もう一度クリック',
+    executed: '実行しました',
+    actionRun: '{1} 実行',
+    chipSleepSuffix: '（スリープ中）',
+    chipOfflineSuffix: '（切断・スリープ）',
+    manageConnected: '接続中',
+    manageBattery: '残量 {1}%',
+    manageNotSeen: '未接続（直前に接続あり）',
+    select: '選択',
+    shown: '表示中',
+    supportedMice: '対応機種: {1}',
+    serverDown: 'サーバーに接続できません',
+    moveMouse: 'マウスを動かしてスリープを解除してください',
+    notifChanged: '{1}: マウス側で設定が変更されました（再取得中…）',
+    mouseOfflineLog: 'マウスがスリープ/オフラインになりました',
+    overDongleTip: 'このドングルでは無効 — 設定は保存され、対応ドングル接続時に有効になります',
+    keepAliveOn: 'スリープ防止ON — 2秒間隔でコマンドを送り続けます',
+    keepAliveOff: 'スリープ防止OFF — 通常のスリープ動作に戻りました',
+  },
+  en: {
+    appTitle: 'Mouse Settings Tool',
+    brandSub: 'CONFIG',
+    deviceInfo: 'Device Information',
+    log: 'Log',
+    manage: 'Manage',
+    manageTitle: 'Supported Mice',
+    manageHint:
+      'Connected mice appear in the header. Inactive mice (disconnected or sleeping) turn gray and disappear automatically if they stay offline for one minute.',
+    language: 'Language',
+    battery: 'Battery',
+    applyModeTip: 'How changes are applied: immediately, or all together with the Save button',
+    applyImmediate: 'Apply instantly',
+    applyManual: 'Save button',
+    apply: 'Apply',
+    applyWithCount: 'Apply ({1})',
+    applyAllTip: 'Apply pending changes to the device',
+    close: 'Close',
+    notConnected: 'Not connected',
+    sleeping: 'Sleeping',
+    connected: 'Connected',
+    noDevices: 'No supported device found. Connect it via USB and it will be recognized automatically…',
+    deviceNotConnected: '{1} is not connected. Connect it via USB and it will be recognized automatically…',
+    offlineBanner:
+      'The mouse is offline. Move or click it to wake it up (also check the power switch and mode selector).',
+    saved: 'Saved',
+    applied: 'Applied',
+    applyFailedSome: '{1} change(s) failed (kept pending)',
+    errorPrefix: 'Error: {1}',
+    commError: 'Communication error: {1}',
+    readFailed: 'Read failed: {1}',
+    readDevice: 'Read settings from device',
+    readDone: 'Settings read from the device',
+    protocolSource: 'Protocol source:',
+    stageCount: 'Number of stages',
+    stagesOption: '{1} stage(s)',
+    activeStage: 'Active stage',
+    currentStage: 'Current stage: {1}',
+    stageColor: 'Stage color',
+    use: 'Use',
+    useTooltip: 'Switch to this stage',
+    inUse: 'In use',
+    armedConfirm: 'Click again to really execute',
+    executed: 'Executed',
+    actionRun: '{1} executed',
+    chipSleepSuffix: ' (sleeping)',
+    chipOfflineSuffix: ' (disconnected / sleeping)',
+    manageConnected: 'Connected',
+    manageBattery: 'Battery {1}%',
+    manageNotSeen: 'Not connected (seen recently)',
+    select: 'Select',
+    shown: 'Shown',
+    supportedMice: 'Supported models: {1}',
+    serverDown: 'Cannot connect to the server',
+    moveMouse: 'Move the mouse to wake it up',
+    notifChanged: '{1}: settings were changed on the mouse (re-reading…)',
+    mouseOfflineLog: 'The mouse went to sleep / offline',
+    overDongleTip: 'Inactive with this dongle — the value is stored and becomes active with a compatible dongle',
+    keepAliveOn: 'Keep-awake ON — sending a command every 2 seconds',
+    keepAliveOff: 'Keep-awake OFF — normal sleep behavior restored',
+  },
+  zh: {
+    appTitle: '鼠标设置工具',
+    brandSub: '设置',
+    deviceInfo: '设备信息',
+    log: '日志',
+    manage: '管理',
+    manageTitle: '支持的鼠标',
+    manageHint:
+      '已连接的鼠标显示在顶部。非活动（断开或休眠）的鼠标会变灰，若 1 分钟内未重新连接则会自动消失。',
+    language: '显示语言',
+    battery: '电池',
+    applyModeTip: '更改的应用方式：立即应用，或通过保存按钮统一应用',
+    applyImmediate: '立即应用',
+    applyManual: '保存按钮',
+    apply: '应用',
+    applyWithCount: '应用 ({1})',
+    applyAllTip: '将挂起的更改应用到设备',
+    close: '关闭',
+    notConnected: '未连接',
+    sleeping: '休眠中',
+    connected: '已连接',
+    noDevices: '未找到支持的设备。通过 USB 连接后将自动识别…',
+    deviceNotConnected: '{1} 未连接。通过 USB 连接后将自动识别…',
+    offlineBanner: '鼠标已离线。请移动或点击鼠标以唤醒（也请检查电源开关和模式切换）。',
+    saved: '已保存',
+    applied: '已应用',
+    applyFailedSome: '{1} 项失败（仍保留）',
+    errorPrefix: '错误: {1}',
+    commError: '通信错误: {1}',
+    readFailed: '读取失败: {1}',
+    readDevice: '从设备读取设置',
+    readDone: '已从鼠标读取设置',
+    protocolSource: '协议来源:',
+    stageCount: '阶段数量',
+    stagesOption: '{1} 档',
+    activeStage: '当前阶段',
+    currentStage: '当前阶段: {1}',
+    stageColor: '阶段颜色',
+    use: '使用',
+    useTooltip: '切换到此阶段',
+    inUse: '使用中',
+    armedConfirm: '再次点击以确认执行',
+    executed: '已执行',
+    actionRun: '{1} 已执行',
+    chipSleepSuffix: '（休眠中）',
+    chipOfflineSuffix: '（断开 / 休眠）',
+    manageConnected: '已连接',
+    manageBattery: '电量 {1}%',
+    manageNotSeen: '未连接（最近连接过）',
+    select: '选择',
+    shown: '显示中',
+    supportedMice: '支持型号: {1}',
+    serverDown: '无法连接到服务器',
+    moveMouse: '请移动鼠标以唤醒',
+    notifChanged: '{1}: 鼠标端设置已更改（正在重新读取…）',
+    mouseOfflineLog: '鼠标已休眠 / 离线',
+    overDongleTip: '当前接收器下无效 — 设置已保存，连接支持的接收器后生效',
+    keepAliveOn: '防休眠 ON — 每 2 秒发送一次指令',
+    keepAliveOff: '防休眠 OFF — 恢复正常休眠行为',
+  },
+};
+
+function t(key, ...args) {
+  const dict = I18N[lang] || I18N.ja;
+  let s = dict[key] != null ? dict[key] : (I18N.ja[key] != null ? I18N.ja[key] : key);
+  args.forEach((a, i) => {
+    s = s.split('{' + (i + 1) + '}').join(String(a));
+  });
+  return s;
+}
+
+/**
+ * Translations for labels/texts that live inside the device profile JSONs.
+ * Keyed by the profile's Japanese string. Missing entries fall back to the
+ * original (Japanese) text, so a new profile keeps working without changes.
+ */
+const LABEL_I18N = {
+  // section titles
+  'プロファイル': { en: 'Profile', zh: '配置文件' },
+  'DPI設定': { en: 'DPI', zh: 'DPI 设置' },
+  'ポーリングレート': { en: 'Polling Rate', zh: '轮询率' },
+  'センサー設定': { en: 'Sensor', zh: '传感器设置' },
+  'ライト設定': { en: 'Lighting', zh: '灯光设置' },
+  'システム': { en: 'System', zh: '系统' },
+  '電源管理': { en: 'Power', zh: '电源管理' },
+  'デバウンサ': { en: 'Debounce', zh: '去抖时间' },
+  // settings / fields
+  'DPI': { en: 'DPI', zh: 'DPI' },
+  'Lift-off Distance (LOD)': { en: 'Lift-off Distance (LOD)', zh: '抬升距离 (LOD)' },
+  'モーションシンク': { en: 'Motion Sync', zh: '运动同步' },
+  'アングルスナップ': { en: 'Angle Snap', zh: '角度吸附' },
+  'アングルスナッピング': { en: 'Angle Snapping', zh: '角度吸附' },
+  'リップルコントロール': { en: 'Ripple Control', zh: '波纹控制' },
+  '20Kセンサーモード': { en: '20K Sensor Mode', zh: '20K 传感器模式' },
+  'パフォーマンスモード': { en: 'Performance Mode', zh: '性能模式' },
+  'センサーモード': { en: 'Sensor Mode', zh: '传感器模式' },
+  'センサー高性能モード': { en: 'High-performance Sensor', zh: '传感器高性能模式' },
+  'eスポーツモード': { en: 'Esports Mode', zh: '电竞模式' },
+  'スリープ時間': { en: 'Sleep Time', zh: '休眠时间' },
+  'パフォーマンス時間': { en: 'Performance Time', zh: '性能持续时间' },
+  'スリープまでの時間': { en: 'Sleep After', zh: '自动休眠时间' },
+  'スクロール方向反転': { en: 'Invert Scroll Direction', zh: '反转滚轮方向' },
+  'ライト': { en: 'Lighting', zh: '灯光' },
+  'モード': { en: 'Mode', zh: '模式' },
+  'カラー': { en: 'Color', zh: '颜色' },
+  '速度': { en: 'Speed', zh: '速度' },
+  '明るさ': { en: 'Brightness', zh: '亮度' },
+  'ロングレンジモード': { en: 'Long Range Mode', zh: '远距离模式' },
+  'Ecoモード': { en: 'Eco Mode', zh: '节能模式' },
+  'ペアリングモード開始': { en: 'Start Pairing Mode', zh: '开始配对模式' },
+  '工場出荷状態に戻す': { en: 'Factory Reset', zh: '恢复出厂设置' },
+  'オンボードプロファイルに戻す': { en: 'Return to Onboard Profile', zh: '返回板载配置文件' },
+  '再同期（バッテリー照会）': { en: 'Resync (battery query)', zh: '重新同步（电池查询）' },
+  '製品': { en: 'Product', zh: '产品' },
+  '接続方式': { en: 'Connection', zh: '连接方式' },
+  'マウスファームウェア': { en: 'Mouse Firmware', zh: '鼠标固件' },
+  'ドングルファームウェア': { en: 'Dongle Firmware', zh: '接收器固件' },
+  'ファームウェア': { en: 'Firmware', zh: '固件' },
+  '電池電圧': { en: 'Battery Voltage', zh: '电池电压' },
+  '現在のプロファイル': { en: 'Current Profile', zh: '当前配置文件' },
+  'バッテリー': { en: 'Battery', zh: '电池' },
+  // options
+  'オフ': { en: 'Off', zh: '关闭' },
+  'カラーフロー': { en: 'Color Flow', zh: '色彩流动' },
+  '単色ブリージング': { en: 'Breathing (Single Color)', zh: '单色呼吸' },
+  '常時点灯（単色）': { en: 'Steady (Single Color)', zh: '常亮（单色）' },
+  'ネオン': { en: 'Neon', zh: '霓虹' },
+  '混色ブリージング': { en: 'Breathing (Multi Color)', zh: '混色呼吸' },
+  '常時点灯（フルカラー）': { en: 'Steady (Full Color)', zh: '常亮（全彩）' },
+  '単色 常時点灯': { en: 'Single Color (Steady)', zh: '单色常亮' },
+  '単色 ブリージング': { en: 'Single Color (Breathing)', zh: '单色呼吸' },
+  'フルカラーサイクル': { en: 'Full Color Cycle', zh: '全彩循环' },
+  '単色フロー': { en: 'Single Color Flow', zh: '单色流动' },
+  'ネオンフラッシュ': { en: 'Neon Flash', zh: '霓虹闪烁' },
+  '省電力 (LP)': { en: 'Power Saving (LP)', zh: '省电 (LP)' },
+  '高性能 (HP)': { en: 'High Performance (HP)', zh: '高性能 (HP)' },
+  '低 (0.7mm)': { en: 'Low (0.7mm)', zh: '低 (0.7mm)' },
+  '中 (1mm)': { en: 'Medium (1mm)', zh: '中 (1mm)' },
+  '高 (2mm)': { en: 'High (2mm)', zh: '高 (2mm)' },
+  '非常に低い Very Low': { en: 'Very Low', zh: '极低' },
+  '低い Low': { en: 'Low', zh: '低' },
+  // connection labels
+  'USB有線': { en: 'USB wired', zh: 'USB 有线' },
+  '有線接続': { en: 'Wired', zh: '有线连接' },
+  'ワイヤレス (8Kドングル)': { en: 'Wireless (8K dongle)', zh: '无线 (8K 接收器)' },
+  'ワイヤレス (Lightspeed)': { en: 'Wireless (Lightspeed)', zh: '无线 (Lightspeed)' },
+  'ワイヤレス (最大1K)': { en: 'Wireless (up to 1K)', zh: '无线 (最高 1K)' },
+  'ワイヤレス 4K': { en: 'Wireless 4K', zh: '无线 4K' },
+  '有線 (最大1K)': { en: 'Wired (up to 1K)', zh: '有线 (最高 1K)' },
+  '有線 8K': { en: 'Wired 8K', zh: '有线 8K' },
+  'ワイヤレス 2K': { en: 'Wireless 2K', zh: '无线 2K' },
+  'ワイヤレス 8K': { en: 'Wireless 8K', zh: '无线 8K' },
+  'スリープ中': { en: 'Sleeping', zh: '休眠中' },
+  '接続済み': { en: 'Connected', zh: '已连接' },
+  'プロファイル 1': { en: 'Profile 1', zh: '配置文件 1' },
+  'プロファイル 2': { en: 'Profile 2', zh: '配置文件 2' },
+  'プロファイル 3': { en: 'Profile 3', zh: '配置文件 3' },
+  'プロファイル 4': { en: 'Profile 4', zh: '配置文件 4' },
+  'プロファイル 5': { en: 'Profile 5', zh: '配置文件 5' },
+  'デバイスから設定を読み出す': { en: 'Read settings from device', zh: '从设备读取设置' },
+  'マウス本体のフラッシュから全設定（DPI・ポーリングレート・センサー設定など）を再読み込みします。マウス本体のボタンで設定を変えた後の同期に便利です。': {
+    en: 'Re-reads all settings (DPI, polling rate, sensor options, …) from the mouse flash. Useful to re-sync after changing settings with the buttons on the mouse.',
+    zh: '从鼠标闪存重新读取全部设置（DPI、轮询率、传感器选项等）。在通过鼠标按键更改设置后同步时很方便。',
+  },
+  '本機はプロトコル上、設定の読み戻しに対応していません（公式Swarmも読み出せません）。このボタンはデバイスへのバッテリー照会で生存確認を行い、このツールが保持する設定キャッシュ（最後に書き込んだ値）を表示します。': {
+    en: 'This device cannot read settings back over the protocol (the official Swarm cannot either). This button only queries the battery to confirm the device is alive and shows the settings cache this tool keeps (the last values written).',
+    zh: '该设备在协议上不支持回读设置（官方 Swarm 也无法读取）。此按钮仅通过电池查询确认设备存活，并显示本工具保存的设置缓存（最后写入的值）。',
+  },
+  'マウス本体から全設定（DPI・ポーリングレート・センサー設定など）を再読み込みします。マウス本体のボタンで設定を変えた後の同期に便利です。': {
+    en: 'Re-reads all settings (DPI, polling rate, sensor options, …) from the mouse. Useful to re-sync after changing settings with the mouse buttons.',
+    zh: '从鼠标重新读取全部设置（DPI、轮询率、传感器选项等）。在通过鼠标按键更改设置后同步时很方便。',
+  },
+  'マウス本体から全設定（DPI・ポーリングレート・センサー設定・ライト）を再読み込みします。': {
+    en: 'Re-reads all settings (DPI, polling rate, sensor, lighting) from the mouse.',
+    zh: '从鼠标重新读取全部设置（DPI、轮询率、传感器、灯光）。',
+  },
+  '再同期しました（デバイス応答OK・設定はこのツールの記録値）': {
+    en: 'Resynced (device responded; settings are the values recorded by this tool)',
+    zh: '已重新同步（设备响应正常；设置为本工具记录的值）',
+  },
+  // hints (exact profile strings)
+  'プロファイルごとに設定一式（DPI・ポーリングレート等）を保存できます。': {
+    en: 'Each profile stores a complete set of settings (DPI, polling rate, …).',
+    zh: '每个配置文件可保存一整套设置（DPI、轮询率等）。',
+  },
+  'DPIは50〜26000の範囲で50刻み。マウス本体のDPIボタンでステージを切り替えると、この画面に自動反映されます。': {
+    en: 'DPI ranges from 50 to 26000 in steps of 50. Switching stages with the mouse DPI button is reflected here automatically.',
+    zh: 'DPI 范围 50 至 26000，步进 50。使用鼠标 DPI 按键切换阶段时，此处会自动更新。',
+  },
+  'この接続方式での最大ポーリングレート: {maxHz} Hz': {
+    en: 'Max polling rate for this connection: {maxHz} Hz',
+    zh: '此连接方式的最大轮询率: {maxHz} Hz',
+  },
+  'マウス本体は最大 {mouseMaxHz} Hz 対応です。現在のドングルでは最大 {maxHz} Hz までが有効 — {maxHz} Hz を超える設定（点線表示）は保存のみ行われ、対応ドングルに交換すると自動的に有効になります。': {
+    en: 'The mouse supports up to {mouseMaxHz} Hz. The current dongle caps it at {maxHz} Hz — settings above {maxHz} Hz (dashed) are stored but only take effect with a compatible dongle.',
+    zh: '鼠标本体最高支持 {mouseMaxHz} Hz。当前接收器最高支持 {maxHz} Hz — 超过 {maxHz} Hz 的设置（虚线）仅被保存，更换支持的接收器后自动生效。',
+  },
+  '0〜255の生値で指定します（参照実装ではテーブル変換なし）': {
+    en: 'Raw value 0–255 (no table conversion, matching the reference implementation).',
+    zh: '以 0–255 原始值指定（参照实现不做表转换）。',
+  },
+  '受信感度優先・消費電力増。非対応ファームウェアでは自動的に非表示になります。': {
+    en: 'Prioritizes reception sensitivity; higher power draw. Hidden automatically on unsupported firmware.',
+    zh: '优先接收灵敏度，功耗增加。不支持的固件会自动隐藏此项。',
+  },
+  'ペアリングモード開始 — マウスの電源を入れ直して近づけてください': {
+    en: 'Pairing mode started — power-cycle the mouse and hold it near the receiver',
+    zh: '已进入配对模式 — 请重新打开鼠标电源并靠近接收器',
+  },
+  '工場リセットを実行しました': { en: 'Factory reset executed', zh: '已执行恢复出厂设置' },
+  'DPIは50〜26000の範囲で50刻み。X/Y独立ですが同じ値で書き込まれます。': {
+    en: 'DPI 50–26000 in steps of 50. X/Y are independent but written with the same value.',
+    zh: 'DPI 范围 50–26000，步进 50。X/Y 独立，但写入相同数值。',
+  },
+  'センサーを常時高性能状態に保ちます（消費電力増）。': {
+    en: 'Keeps the sensor in its high-performance state (higher power draw).',
+    zh: '使传感器保持高性能状态（功耗增加）。',
+  },
+  'DPIが9000超のときのリップルを抑制します。': {
+    en: 'Suppresses ripple when DPI is above 9000.',
+    zh: '抑制 DPI 超过 9000 时的波纹。',
+  },
+  'センサーと制御チップを最も活性な状態にします。消費電力が大幅に増加します。ポーリングレート2kHz超では自動有効化されます。': {
+    en: 'Puts the sensor and control chip into their most active state. Power consumption increases significantly. Enabled automatically above 2 kHz polling.',
+    zh: '使传感器与控制芯片处于最活跃状态。功耗显著增加。轮询率超过 2 kHz 时自动启用。',
+  },
+  '無操作でスリープするまでの時間（既定600秒 = 10分）': {
+    en: 'Time until the mouse sleeps when idle (default 600 s = 10 min).',
+    zh: '无操作后进入休眠的时间（默认 600 秒 = 10 分钟）。',
+  },
+  '低くするとダブルクリックが発生することがあります。': {
+    en: 'Lower values may cause double clicks.',
+    zh: '数值过低可能导致双击。',
+  },
+  'カラーは全3ゾーン（ロゴ・ホイール・底部）に同時適用されます。': {
+    en: 'The color applies to all three zones (logo, wheel, bottom) at once.',
+    zh: '颜色同时应用于全部 3 个区域（Logo、滚轮、底部）。',
+  },
+  '1〜255の生値で指定します': { en: 'Raw value 1–255', zh: '以 1–255 原始值指定' },
+  '100〜25600（50刻み、端数は自動で50刻みに丸められます）。変更は即時適用されます。': {
+    en: '100–25600 (steps of 50; values snap to the nearest step). Changes apply immediately.',
+    zh: '100–25600（步进 50，自动取整）。更改立即生效。',
+  },
+  '本体は最大1000Hzです。': { en: 'The mouse supports up to 1000 Hz.', zh: '鼠标最高支持 1000 Hz。' },
+  'このツールでの変更（DPI・レート）はライブ適用のため、マウスの電源再投入やこのボタンでオンボードプロファイルの設定に戻ります。G HUBで保存した値を復元したいときに押してください。': {
+    en: 'Changes made here (DPI, rate) are applied live and revert to the onboard profile on power-cycle or when pressing this button. Use it to restore the values saved with G HUB.',
+    zh: '此处的更改（DPI、轮询率）为即时应用，重新上电或按下此按钮后恢复为板载配置文件。用于还原 G HUB 保存的数值。',
+  },
+  'マウス本体のオンボードプロファイルに戻しました': {
+    en: 'Returned to the mouse onboard profile',
+    zh: '已恢复为鼠标板载配置文件',
+  },
+  '100〜35000（50刻み）。X/Y独立領域に同じ値を書き込みます。変更は即時適用・保存されます。': {
+    en: '100–35000 (steps of 50). The same value is written to the X and Y fields. Changes apply immediately and are saved.',
+    zh: '100–35000（步进 50）。X/Y 独立字段写入相同数值。更改立即生效并保存。',
+  },
+  '有線標準ファームウェアでは125/500/1000Hzに対応します。': {
+    en: 'The wired standard firmware supports 125 / 500 / 1000 Hz.',
+    zh: '有线标准固件支持 125 / 500 / 1000 Hz。',
+  },
+  '無操作でスリープするまでの時間（60〜900秒）': {
+    en: 'Time until sleep when idle (60–900 s).',
+    zh: '无操作后进入休眠的时间（60–900 秒）。',
+  },
+  '5つのDPIスロット（未使用は0のまま）。「使用」ボタンでアクティブステージを切り替えると、そのステージのDPIがすぐ体感できます。': {
+    en: 'Five DPI slots (unused ones stay 0). Press "Use" to make a stage active and feel its DPI immediately.',
+    zh: '5 个 DPI 槽位（未使用保持 0）。按「使用」切换当前阶段即可立即感受该 DPI。',
+  },
+  '対応は1000Hzまで。コードはSwarm通信と数値照合済み（125→3, 500→1, 1000→0）。': {
+    en: 'Supports up to 1000 Hz. Codes verified against Swarm traffic (125→3, 500→1, 1000→0).',
+    zh: '最高支持 1000 Hz。代码已与 Swarm 通信核对（125→3, 500→1, 1000→0）。',
+  },
+  'Swarm表示と照合済み（コード7=Very Low=既定、コード6=Low）。Swarmにはさらに「カスタム」設定が存在します（符号化は未解明のため本ツールでは未対応）。': {
+    en: 'Verified against Swarm (code 7 = Very Low = default, 6 = Low). Swarm also has a "Custom" option (encoding unknown; not supported here).',
+    zh: '已与 Swarm 核对（代码 7 = Very Low = 默认，6 = Low）。Swarm 还有「自定义」选项（编码未知，本工具暂不支持）。',
+  },
+  'ON/OFFは通信解析で確認済み（OFF=0x00, ON=0xaa）。Ecoモード中はセンサー感度・ポーリング等が省電力側に制限される場合があります。': {
+    en: 'ON/OFF verified from traffic (OFF=0x00, ON=0xaa). In Eco mode sensor sensitivity and polling may be limited for power saving.',
+    zh: 'ON/OFF 已由通信解析确认（OFF=0x00, ON=0xaa）。节能模式下传感器灵敏度与轮询率可能受限。',
+  },
+  '0〜10ms。Swarm通信と数値照合済み（8ms→08, 4ms→04）。': {
+    en: '0–10 ms. Verified against Swarm traffic (8 ms→08, 4 ms→04).',
+    zh: '0–10ms。已与 Swarm 通信核对（8ms→08, 4ms→04）。',
+  },
+  '8スロット固定。DPIはX/Y独立ですが、本ツールはX=Yとして書き込みます（レンジ100〜30000、50刻み）。マウスのDPIボタンで切替すると自動反映されます。': {
+    en: 'Fixed 8 slots. DPI X/Y are independent; this tool writes X = Y (range 100–30000, steps of 50). Switching with the mouse DPI button is reflected automatically.',
+    zh: '固定 8 个槽位。DPI X/Y 独立，但本工具以 X=Y 写入（范围 100–30000，步进 50）。使用鼠标 DPI 按键切换时会自动反映。',
+  },
+  '部分書き込みが他のバイトを保持することを実機確認済み。': {
+    en: 'Verified on hardware that partial writes preserve the other bytes.',
+    zh: '已在实机确认部分写入不会破坏其他字节。',
+  },
+  'センサー応答プリセット（公式Webドライバの Basic / Competitive / Max に対応）': {
+    en: 'Sensor response preset (matches the official web driver: Basic / Competitive / Max).',
+    zh: '传感器响应预设（对应官方 Web 驱动: Basic / Competitive / Max）。',
+  },
+  '0xA9ページへの書き込み後、0xB5確認ブロックも送信します（madr-libと同一手順）。': {
+    en: 'After writing page 0xA9, a confirmation block is also sent to 0xB5 (same procedure as madr-lib).',
+    zh: '写入 0xA9 页面后，还会向 0xB5 发送确认块（与 madr-lib 相同步骤）。',
+  },
+};
+
+function trLabel(s) {
+  if (typeof s !== 'string' || lang === 'ja') return s;
+  const apply = (v) =>
+    lang === 'en' ? v.replace('（最大 ', ' (max ').replace(' Hz）', ' Hz)') : v;
+  const hit = LABEL_I18N[s];
+  if (hit && hit[lang]) return apply(hit[lang]);
+  // connection labels are built as "label（最大 N Hz）" — translate the prefix
+  for (const [ja, tr] of Object.entries(LABEL_I18N)) {
+    if (tr[lang] && s.startsWith(ja) && s.length > ja.length) {
+      return apply(tr[lang] + s.slice(ja.length));
+    }
+  }
+  return apply(s);
+}
+
+function applyStaticI18n() {
+  document.documentElement.lang = lang === 'zh' ? 'zh-CN' : lang;
+  document.title = t('appTitle');
+  const map = {
+    brandSub: t('brandSub'),
+    deviceInfoTitle: t('deviceInfo'),
+    logTitle: t('log'),
+    manageTitle: t('manageTitle'),
+    manageHint: t('manageHint'),
+    langLabel: t('language'),
+    manageBtnLabel: t('manage'),
+    applyAllBtn: null, // text handled by updateApplyButton()
+  };
+  for (const [id, text] of Object.entries(map)) {
+    if (text == null) continue;
+    const el = document.getElementById(id);
+    if (el) el.textContent = text;
+  }
+  const bat = $('#batteryChip');
+  if (bat) bat.title = t('battery');
+  const modeChip = $('#modeChip');
+  if (modeChip) modeChip.title = t('applyModeTip');
+  const applyBtn = $('#applyAllBtn');
+  if (applyBtn) applyBtn.title = t('applyAllTip');
+  const modeLabel = $('#applyModeLabel');
+  const modeToggle = $('#applyModeToggle');
+  if (modeLabel && modeToggle) modeLabel.textContent = modeToggle.checked ? t('applyImmediate') : t('applyManual');
+}
+
+function setLanguage(next) {
+  if (!LANGS.includes(next)) return;
+  lang = next;
+  localStorage.setItem('uiLang', next);
+  applyStaticI18n();
+  builtFor = null;
+  builtForDevice = null;
+  render();
+  const dlg = $('#manageDialog');
+  if (dlg && dlg.open) renderManageList();
+}
+
 /* ------------------------------------------------------------------ utils */
 
 function toast(text, type = 'ok') {
@@ -91,15 +578,15 @@ async function applySetting(setting, args) {
       if (j.config) slot().config = j.config;
       if (j.devices) updateDevices(j.devices);
       render();
-      toast('保存しました');
+      toast(t('saved'));
       addLog(`✔ ${setting} ${JSON.stringify(args)}`);
     } else {
-      toast(`エラー: ${j.error || r.status}`, 'error');
+      toast(t('errorPrefix', j.error || r.status), 'error');
       addLog(`✖ ${setting}: ${j.error || 'failed'}`, true);
       refreshFromDevice();
     }
   } catch (e) {
-    toast(`通信エラー: ${e.message}`, 'error');
+    toast(t('commError', e.message), 'error');
   } finally {
     setBusy(false);
   }
@@ -124,7 +611,7 @@ function updateApplyButton() {
   const btn = $('#applyAllBtn');
   if (!btn) return;
   const n = pendingMap.size;
-  btn.textContent = n ? `適用 (${n})` : '適用';
+  btn.textContent = n ? t('applyWithCount', n) : t('apply');
   btn.classList.toggle('hidden', applyModeImmediate);
   btn.disabled = n === 0;
 }
@@ -164,18 +651,18 @@ async function applyPending() {
         addLog(`✔ ${e.key} ${JSON.stringify(e.args)}`);
       } else {
         failed += 1;
-        toast(`エラー: ${j.error || r.status}`, 'error');
+        toast(t('errorPrefix', j.error || r.status), 'error');
         addLog(`✖ ${e.key}: ${j.error || 'failed'}`, true);
       }
     } catch (err) {
       failed += 1;
-      toast(`通信エラー: ${err.message}`, 'error');
+      toast(t('commError', err.message), 'error');
     }
   }
   setBusy(false);
   render();
   updateApplyButton();
-  toast(failed ? `${failed} 件失敗しました（保留中）` : '適用しました');
+  toast(failed ? t('applyFailedSome', failed) : t('applied'));
 }
 
 async function applyAction(action, args) {
@@ -190,17 +677,17 @@ async function applyAction(action, args) {
     const j = await r.json();
     if (j.ok) {
       const def = findAction(action);
-      if (def && def.successMessage) toast(def.successMessage, 'info');
-      else toast('実行しました', 'info');
-      addLog(`⚙ ${action} 実行`);
+      if (def && def.successMessage) toast(trLabel(def.successMessage), 'info');
+      else toast(t('executed'), 'info');
+      addLog(`⚙ ${t('actionRun', action)}`);
       if (j.devices) updateDevices(j.devices);
       refreshFromDevice();
     } else {
-      toast(`エラー: ${j.error || r.status}`, 'error');
+      toast(t('errorPrefix', j.error || r.status), 'error');
       addLog(`✖ ${action}: ${j.error || 'failed'}`, true);
     }
   } catch (e) {
-    toast(`通信エラー: ${e.message}`, 'error');
+    toast(t('commError', e.message), 'error');
   } finally {
     setBusy(false);
   }
@@ -221,10 +708,10 @@ async function refreshFromDevice() {
       render();
       return true;
     }
-    toast(`読み出し失敗: ${j.error || r.status}`, 'error');
+    toast(t('readFailed', j.error || r.status), 'error');
     return false;
   } catch (e) {
-    toast(`通信エラー: ${e.message}`, 'error');
+    toast(t('commError', e.message), 'error');
     return false;
   }
 }
@@ -281,11 +768,11 @@ function findAction(key) {
 
 function optionList(setting) {
   if (setting.options) {
-    return setting.options.map((o) => ({ value: o.value, label: o.label != null ? o.label : String(o.value) }));
+    return setting.options.map((o) => ({ value: o.value, label: trLabel(o.label != null ? o.label : String(o.value)) }));
   }
   const codec = setting.read && setting.read.codec;
   if (codec && Array.isArray(codec.values)) {
-    return codec.values.map((x) => ({ value: x.value, label: x.label != null ? x.label : String(x.value) }));
+    return codec.values.map((x) => ({ value: x.value, label: trLabel(x.label != null ? x.label : String(x.value)) }));
   }
   return [];
 }
@@ -315,10 +802,10 @@ function hintEl(text, template = null, id = null) {
   p.className = 'hint';
   if (id) p.id = id;
   if (template) {
-    p.dataset.template = template;
-    p.textContent = text || '';
+    p.dataset.template = trLabel(template);
+    p.textContent = trLabel(text) || '';
   } else {
-    p.textContent = text;
+    p.textContent = trLabel(text);
   }
   return p;
 }
@@ -334,7 +821,7 @@ function buildUi() {
   if (!s.schema) return;
   builtFor = s.schema.id;
   $('#brandModel').textContent = s.schema.meta.name;
-  document.title = `${s.schema.meta.name} 設定ツール`;
+  document.title = `${s.schema.meta.name} — ${t('appTitle')}`;
   const container = $('#sections');
   container.innerHTML = '';
 
@@ -343,7 +830,7 @@ function buildUi() {
     card.className = 'card';
     card.dataset.section = sec.title;
     const h = document.createElement('h2');
-    h.textContent = sec.title;
+    h.textContent = trLabel(sec.title);
     card.appendChild(h);
 
     for (const st of sec.settings || []) {
@@ -351,52 +838,6 @@ function buildUi() {
     }
 
     for (const a of sec.actions || []) {
-      // keepAwake toggle: server-side special action, rendered as a toggle
-      if (a.command === 'keepAwakeToggle') {
-        const row = document.createElement('div');
-        row.className = 'row';
-        row.id = `keepawake-row`;
-        const lab = document.createElement('label');
-        lab.textContent = a.label || 'Keep awake';
-        lab.style.minWidth = '180px';
-        const t = document.createElement('label');
-        t.className = 'toggle';
-        const input = document.createElement('input');
-        input.type = 'checkbox';
-        input.id = 'keepAwakeToggle';
-        const knob = document.createElement('span');
-        knob.className = 'knob';
-        const span = document.createElement('span');
-        span.textContent = 'ON';
-        t.append(input, knob, span);
-        row.append(lab, t);
-        if (a.hint) row.appendChild(hintEl(a.hint));
-        input.addEventListener('change', async (e) => {
-          const on = e.target.checked;
-          try {
-            const r = await fetch('/api/action', {
-              method: 'POST',
-              headers: { 'Content-Type': 'application/json' },
-              body: JSON.stringify({ device: activeDevice, action: 'keepAwakeToggle', args: { value: on } }),
-            });
-            const j = await r.json();
-            if (j.ok) {
-              toast(on ? 'スリープ防止ON — 2秒間隔でコマンドを送り続けます' : 'スリープ防止OFF — 通常のスリープ動作に戻りました');
-              addLog(`⚡ keep-awake ${on ? 'ON' : 'OFF'}`);
-              if (j.config) slot().config = j.config;
-              render();
-            } else {
-              toast(`エラー: ${j.error}`, 'error');
-              e.target.checked = !on; // revert
-            }
-          } catch (err) {
-            toast(`通信エラー: ${err.message}`, 'error');
-            e.target.checked = !on;
-          }
-        });
-        card.appendChild(row);
-        continue;
-      }
       const row = document.createElement('div');
       row.className = 'row';
       const lab = document.createElement('label');
@@ -420,7 +861,7 @@ function buildSetting(s) {
       const row = document.createElement('div');
       row.className = 'row';
       const lab = document.createElement('label');
-      lab.textContent = s.label || s.key;
+      lab.textContent = trLabel(s.label || s.key);
       row.appendChild(lab);
       const seg = document.createElement('div');
       seg.className = 'seg';
@@ -448,7 +889,7 @@ function buildSetting(s) {
       const row = document.createElement('div');
       row.className = 'row';
       const lab = document.createElement('label');
-      lab.textContent = s.label || s.key;
+      lab.textContent = trLabel(s.label || s.key);
       const sel = document.createElement('select');
       sel.id = `sel-${s.key}`;
       for (const o of optionList(s)) {
@@ -469,7 +910,7 @@ function buildSetting(s) {
       const row = document.createElement('div');
       row.className = 'row';
       const lab = document.createElement('label');
-      lab.textContent = `${s.label || s.key} `;
+      lab.textContent = `${trLabel(s.label || s.key)} `;
       const val = document.createElement('b');
       val.className = 'num';
       val.id = `val-${s.key}`;
@@ -517,7 +958,7 @@ function buildSetting(s) {
     }
 
     case 'toggle': {
-      const { wrap, input } = buildToggleRow(s.label || s.key, `tog-${s.key}`);
+      const { wrap, input } = buildToggleRow(trLabel(s.label || s.key), `tog-${s.key}`);
       input.addEventListener('change', (e) => {
         commitSetting(s.key, { value: e.target.checked }, [input]);
       });
@@ -530,7 +971,7 @@ function buildSetting(s) {
       const row = document.createElement('div');
       row.className = 'row';
       const lab = document.createElement('label');
-      lab.textContent = s.label || s.key;
+      lab.textContent = trLabel(s.label || s.key);
       const c = document.createElement('input');
       c.type = 'color';
       c.id = `color-${s.key}`;
@@ -550,13 +991,13 @@ function buildSetting(s) {
         const row = document.createElement('div');
         row.className = 'row';
         const lab = document.createElement('label');
-        lab.textContent = 'ステージ数';
+        lab.textContent = t('stageCount');
         const cnt = document.createElement('select');
         cnt.id = `dpi-count-${s.key}`;
         for (let i = 1; i <= num(s.maxRecords, 8); i++) {
           const o = document.createElement('option');
           o.value = String(i);
-          o.textContent = `${i} 段階`;
+          o.textContent = t('stagesOption', i);
           cnt.appendChild(o);
         }
         cnt.addEventListener('change', (e) => {
@@ -571,7 +1012,7 @@ function buildSetting(s) {
         const row = document.createElement('div');
         row.className = 'row';
         const lab = document.createElement('label');
-        lab.textContent = 'アクティブステージ';
+        lab.textContent = t('activeStage');
         const cur = document.createElement('span');
         cur.className = 'hint';
         cur.id = `dpi-current-${s.key}`;
@@ -594,7 +1035,7 @@ function buildSetting(s) {
 
         const flag = document.createElement('span');
         flag.className = 'cur-flag';
-        flag.textContent = '● 現在';
+        flag.textContent = t('inUse');
 
         const controls = document.createElement('div');
         controls.className = 'dpi-controls';
@@ -612,14 +1053,14 @@ function buildSetting(s) {
 
         const color = document.createElement('input');
         color.type = 'color';
-        color.title = 'ステージの色';
+        color.title = t('stageColor');
 
         const use = document.createElement('button');
         use.className = 'btn small';
-        use.textContent = '使用';
-        use.title = 'このステージに切り替え';
+        use.textContent = t('use');
+        use.title = t('useTooltip');
 
-        r.append(badge, flag, controls, color, use);
+        r.append(badge, controls, color, use, flag);
         stages.appendChild(r);
 
         const commit = () => {
@@ -643,7 +1084,7 @@ function buildSetting(s) {
           if (!applyModeImmediate) {
             $$('.dpi-row', stages).forEach((x) => x.classList.toggle('current', x === r));
             const curEl = $(`#dpi-current-${s.key}`);
-            if (curEl) curEl.textContent = `現在のステージ: ${i + 1}`;
+            if (curEl) curEl.textContent = t('currentStage', i + 1);
           }
           commitSetting(s.key, { op: 'current', value: i }, [r]);
         });
@@ -665,14 +1106,14 @@ function buildSetting(s) {
           const row = document.createElement('div');
           row.className = 'row';
           const lab = document.createElement('label');
-          lab.textContent = f.label || f.key;
+          lab.textContent = trLabel(f.label || f.key);
           const sel = document.createElement('select');
           sel.id = `grp-${s.key}-${f.key}`;
           const codecValues = (f.read && f.read.codec && f.read.codec.values) || [];
           for (const o of codecValues) {
             const opt = document.createElement('option');
             opt.value = String(o.value);
-            opt.textContent = o.label != null ? o.label : String(o.value);
+            opt.textContent = trLabel(o.label != null ? o.label : String(o.value));
             sel.appendChild(opt);
           }
           sel.addEventListener('change', (e) => {
@@ -685,7 +1126,7 @@ function buildSetting(s) {
           const row = document.createElement('div');
           row.className = 'row';
           const lab = document.createElement('label');
-          lab.textContent = f.label || f.key;
+          lab.textContent = trLabel(f.label || f.key);
           const c = document.createElement('input');
           c.type = 'color';
           c.id = `grp-${s.key}-${f.key}`;
@@ -699,7 +1140,7 @@ function buildSetting(s) {
           const row = document.createElement('div');
           row.className = 'row';
           const lab = document.createElement('label');
-          lab.textContent = `${f.label || f.key} `;
+          lab.textContent = `${trLabel(f.label || f.key)} `;
           const val = document.createElement('b');
           val.className = 'num';
           val.id = `grp-${s.key}-${f.key}-val`;
@@ -746,7 +1187,7 @@ function runAction(a) {
         resetArmed = null;
       }, 4000);
       btn.classList.add('armed');
-      btn.textContent = '本当に実行する場合、もう一度クリック';
+      btn.textContent = t('armedConfirm');
       return;
     }
     if (resetArmed) {
@@ -811,7 +1252,7 @@ function renderDeviceChips() {
         const chip = document.createElement('button');
         chip.className = 'chip device-chip chip-off';
         chip.disabled = true;
-        chip.textContent = d.name + (d.connected && !d.online ? '（スリープ中）' : '');
+        chip.textContent = d.name + (d.connected && !d.online ? t('chipSleepSuffix') : '');
         chip.title = d.id;
         holder.appendChild(chip);
       }
@@ -822,7 +1263,7 @@ function renderDeviceChips() {
     chip.className =
       'chip device-chip' +
       (isOnline ? (d.id === activeDevice ? ' active' : ' chip-ok') : ' chip-off');
-    chip.textContent = d.name + (isOnline ? '' : '（切断・スリープ）');
+    chip.textContent = d.name + (isOnline ? '' : t('chipOfflineSuffix'));
     chip.title = d.id;
     chip.addEventListener('click', async () => {
       if (busy || d.id === activeDevice) return;
@@ -846,30 +1287,30 @@ function renderStatus() {
   renderDeviceChips();
 
   if (!devicesStatus.length || !activeDevice) {
-    setChip(conn, '未接続', 'chip-off');
+    setChip(conn, t('notConnected'), 'chip-off');
     app.classList.add('disabled');
     banner.classList.remove('hidden', 'info');
-    banner.textContent = '対応デバイスが見つかりません。USB接続すると自動で認識します…';
+    banner.textContent = t('noDevices');
     return;
   }
 
   const st = s.status || {};
   if (!st.connected) {
-    setChip(conn, '未接続', 'chip-off');
+    setChip(conn, t('notConnected'), 'chip-off');
     app.classList.add('disabled');
     banner.classList.remove('hidden', 'info');
-    banner.textContent = `${s.schema ? s.schema.meta.name : activeDevice} は未接続です。USB接続すると自動で認識します…`;
+    banner.textContent = t('deviceNotConnected', s.schema ? s.schema.meta.name : activeDevice);
     return;
   }
 
   if (!st.online) {
-    setChip(conn, 'スリープ中', 'chip-warn');
+    setChip(conn, t('sleeping'), 'chip-warn');
     app.classList.add('disabled');
     banner.classList.remove('hidden', 'info');
     banner.textContent =
-      'マウスがオフラインです。マウスを動かすかクリックしてスリープを解除してください（電源スイッチ・モード切替も確認してください）。';
+      t('offlineBanner');
   } else {
-    setChip(conn, st.connection || '接続済み', 'chip-ok');
+    setChip(conn, trLabel(st.connection) || t('connected'), 'chip-ok');
     app.classList.remove('disabled');
     banner.classList.add('hidden');
   }
@@ -890,9 +1331,9 @@ function renderStatus() {
     const div = document.createElement('div');
     div.className = 'kv';
     const lab = document.createElement('label');
-    lab.textContent = info.label;
+    lab.textContent = trLabel(info.label);
     const b = document.createElement('b');
-    b.textContent = st[info.key] != null ? st[info.key] : '--';
+    b.textContent = st[info.key] != null ? trLabel(String(st[info.key])) : '--';
     div.append(lab, b);
     kv.appendChild(div);
   }
@@ -906,11 +1347,11 @@ function renderStatus() {
       const btn = document.createElement('button');
       btn.className = 'btn';
       btn.id = 'readDeviceBtn';
-      btn.textContent = rb.label || 'デバイスから読み出し';
+      btn.textContent = trLabel(rb.label) || t('readDevice');
       btn.disabled = !(st.connected && st.online) || busy;
       btn.addEventListener('click', async () => {
         const ok = await refreshFromDevice();
-        if (ok) toast(rb.successMessage || '読み出しました');
+        if (ok) toast(trLabel(rb.successMessage) || t('readDone'));
       });
       actions.appendChild(btn);
       if (rb.note) actions.appendChild(hintEl(rb.note));
@@ -921,7 +1362,7 @@ function renderStatus() {
   if (src) {
     src.textContent =
       s.schema && s.schema.documentation && s.schema.documentation.protocolSource
-        ? `プロトコル出典: ${s.schema.documentation.protocolSource}`
+        ? `${t('protocolSource')} ${s.schema.documentation.protocolSource}`
         : '';
   }
 }
@@ -959,7 +1400,7 @@ function renderSetting(s, config, online) {
         b.classList.toggle('seg-over-max', overDongle && !overBody);
         b.disabled = !online || overBody;
         if (overDongle && !overBody) {
-          b.title = 'このドングルでは無効 — 設定は保存され、対応ドングル接続時に有効になります';
+          b.title = t('overDongleTip');
         } else {
           b.removeAttribute('title');
         }
@@ -1040,7 +1481,7 @@ function renderSetting(s, config, online) {
       if (stages) {
         const curPend = $$('.dpi-row.pending', stages).some((x) => true);
         const cur = $(`#dpi-current-${s.key}`);
-        if (cur && !curPend) cur.textContent = d.current != null ? `現在のステージ: ${d.current + 1}` : '';
+        if (cur && !curPend) cur.textContent = d.current != null ? t('currentStage', d.current + 1) : '';
       }
       if (!stages) return;
       $$('.dpi-row', stages).forEach((row) => {
@@ -1194,20 +1635,20 @@ function connectEvents() {
         if (slots[device]) {
           slots[device].status = { ...(slots[device].status || {}), online: !!on };
           render();
-          if (!on && device === activeDevice) addLog('マウスがスリープ/オフラインになりました', true);
+          if (!on && device === activeDevice) addLog(t('mouseOfflineLog'), true);
         }
         break;
       }
       case 'notification': {
         const { device } = data;
-        addLog(`${device}: マウス側で設定が変更されました（再取得中…）`);
+        addLog(t('notifChanged', device));
         break;
       }
       case 'waiting': {
         const device = data && data.device;
         if (device === activeDevice) {
           const st = slot().status || {};
-          if (st.connected && !st.online) toast('マウスを動かしてスリープを解除してください', 'info');
+          if (st.connected && !st.online) toast(t('moveMouse'), 'info');
         }
         break;
       }
@@ -1234,16 +1675,16 @@ async function selectDeviceFromManage(deviceId) {
 
 function statusLineFor(d) {
   if (d.connected && d.online) {
-    const parts = ['接続中'];
-    if (d.battery && d.battery.level != null) parts.push(`残量 ${d.battery.level}%`);
+    const parts = [t('manageConnected')];
+    if (d.battery && d.battery.level != null) parts.push(t('manageBattery', d.battery.level));
     return { text: parts.join(' / '), cls: 'manage-live' };
   }
   if (d.connected) {
-    return { text: 'スリープ中', cls: 'manage-sleep' };
+    return { text: t('sleeping'), cls: 'manage-sleep' };
   }
   const cs = chipState.get(d.id);
   const seenBefore = cs && cs.seenAt > 0;
-  return { text: seenBefore ? '未接続（直前に接続あり）' : '未接続', cls: '' };
+  return { text: seenBefore ? t('manageNotSeen') : t('notConnected'), cls: '' };
 }
 
 function renderManageList() {
@@ -1268,26 +1709,38 @@ function renderManageList() {
     if (d.connected && d.id !== activeDevice) {
       const btn = document.createElement('button');
       btn.className = 'btn small manage-use';
-      btn.textContent = '選択';
+      btn.textContent = t('select');
       btn.addEventListener('click', () => selectDeviceFromManage(d.id));
       row.appendChild(btn);
     } else if (d.id === activeDevice) {
       const badge = document.createElement('span');
       badge.className = 'manage-status';
-      badge.textContent = '表示中';
+      badge.textContent = t('shown');
       row.appendChild(badge);
     }
     container.appendChild(row);
   }
   const note = document.createElement('p');
   note.className = 'empty-note';
-  note.textContent = `対応機種: ${devicesStatus.map((x) => x.name).join('、') || '-'}`;
+  note.textContent = t('supportedMice', devicesStatus.map((x) => x.name).join(', ') || '-');
   container.appendChild(note);
 }
 
 function initManageDialog() {
   const dlg = $('#manageDialog');
   if (!dlg) return;
+  const langSelect = $('#langSelect');
+  if (langSelect) {
+    langSelect.innerHTML = '';
+    for (const l of LANGS) {
+      const opt = document.createElement('option');
+      opt.value = l;
+      opt.textContent = LANG_NAMES[l];
+      langSelect.appendChild(opt);
+    }
+    langSelect.value = lang;
+    langSelect.addEventListener('change', (e) => setLanguage(e.target.value));
+  }
   $('#manageBtn').addEventListener('click', () => {
     renderManageList();
     dlg.showModal();
@@ -1303,6 +1756,7 @@ function initManageDialog() {
 }
 
 async function init() {
+  applyStaticI18n();
   render();
   // apply-mode toggle (即時適用 / 保存ボタン) — persisted in localStorage
   const modeToggle = $('#applyModeToggle');
@@ -1311,7 +1765,7 @@ async function init() {
   if (modeToggle) {
     modeToggle.checked = applyModeImmediate;
     const syncModeUi = () => {
-      if (modeLabel) modeLabel.textContent = modeToggle.checked ? '即時適用' : '保存ボタン';
+      if (modeLabel) modeLabel.textContent = modeToggle.checked ? t('applyImmediate') : t('applyManual');
     };
     syncModeUi();
     modeToggle.addEventListener('change', () => {
@@ -1336,7 +1790,7 @@ async function init() {
     const j = await r.json();
     updateDevices(j.devices || []);
   } catch (e) {
-    toast('サーバーに接続できません', 'error');
+    toast(t('serverDown'), 'error');
   }
   connectEvents();
 }

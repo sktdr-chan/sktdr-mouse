@@ -9,13 +9,13 @@
 <body>
 
 <header class="topbar">
-  <div class="brand"><span id="brandName">Mouse</span> <em id="brandModel">Config</em><span class="sub">設定ツール</span></div>
+  <div class="brand"><span id="brandName">Mouse</span> <em id="brandModel">Config</em><span class="sub" id="brandSub">設定ツール</span></div>
   <div class="chips">
     <span id="deviceChips" class="device-chips"></span>
     <span id="connChip" class="chip chip-off">未接続</span>
     <span id="batteryChip" class="chip chip-off" title="バッテリー">🔋 --%</span>
-    <button id="manageBtn" class="chip manage-chip" title="対応するマウスの一覧と管理">⚙ 管理</button>
-    <label class="chip mode-chip" title="変更の適用方法：即時適用か、保存ボタンでまとめて適用か">
+    <button id="manageBtn" class="chip manage-chip" title="対応するマウスの一覧と管理">⚙ <span id="manageBtnLabel">管理</span></button>
+    <label class="chip mode-chip" id="modeChip" title="変更の適用方法：即時適用か、保存ボタンでまとめて適用か">
       <input type="checkbox" id="applyModeToggle" checked>
       <span id="applyModeLabel">即時適用</span>
     </label>
@@ -28,7 +28,7 @@
 <main id="app">
 
   <section class="card">
-    <h2>デバイス情報</h2>
+    <h2 id="deviceInfoTitle">デバイス情報</h2>
     <div class="kv-grid" id="deviceKv"></div>
     <div class="row" id="deviceActions"></div>
     <p class="hint" id="protocolSource"></p>
@@ -37,7 +37,7 @@
   <div id="sections"></div>
 
   <section class="card">
-    <h2>ログ</h2>
+    <h2 id="logTitle">ログ</h2>
     <ul id="logList" class="log"></ul>
   </section>
 
@@ -46,13 +46,17 @@
 <!-- 対応するマウスの一覧・管理 -->
 <dialog id="manageDialog">
   <header class="manage-header">
-    <h3>対応するマウス</h3>
+    <h3 id="manageTitle">対応するマウス</h3>
     <button id="manageClose" class="btn small" title="閉じる">✕</button>
   </header>
-  <p class="hint">
+  <p class="hint" id="manageHint">
     接続中のマウスが上部に表示されます。非アクティブ（切断・スリープ）になったマウスは灰色になり、
     1分間再接続されないと自動で消えます。
   </p>
+  <div class="manage-settings">
+    <label for="langSelect" id="langLabel">表示言語</label>
+    <select id="langSelect"></select>
+  </div>
   <div id="manageList"></div>
 </dialog>
 

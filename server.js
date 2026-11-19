@@ -231,17 +231,6 @@ const server = http.createServer(async (req, res) => {
           return sendJSON(res, 400, { ok: false, error: e.message });
         }
       }
-      if (u.pathname === '/api/keepawake') {
-        const body = await readBody(req);
-        const a = manager.requireAdapter(body.device);
-        if (!a) return sendJSON(res, 503, { ok: false, error: 'デバイスに接続されていません' });
-        try {
-          await a.setKeepAwake(!!body.on);
-          return sendJSON(res, 200, { ok: true, device: a.profile.id, keepAwake: a._keepAwakeOn });
-        } catch (e) {
-          return sendJSON(res, 400, { ok: false, error: e.message });
-        }
-      }
       if (u.pathname === '/api/apply') {
         const body = await readBody(req);
         const a = manager.requireAdapter(body.device);
@@ -322,21 +311,14 @@ server.listen(PORT, HOST, () => {
 });
 
 process.on('SIGINT', async () => {
-  // restore keep-awake sleep settings before shutting down
-  const restores = [];
   for (const a of manager.adapters.values()) {
-    restores.push(a.restoreKeepAwake().catch(() => {}));
     a.gracefulClose();
   }
-  await Promise.race([Promise.allSettled(restores), new Promise((r) => setTimeout(r, 1000))]);
   process.exit(0);
 });
 process.on('SIGTERM', async () => {
-  const restores = [];
   for (const a of manager.adapters.values()) {
-    restores.push(a.restoreKeepAwake().catch(() => {}));
     a.gracefulClose();
   }
-  await Promise.race([Promise.allSettled(restores), new Promise((r) => setTimeout(r, 1000))]);
   process.exit(0);
 });

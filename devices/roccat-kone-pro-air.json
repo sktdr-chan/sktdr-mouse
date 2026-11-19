@@ -123,19 +123,6 @@
     },
     "sections": [
       {
-        "title": "一般設定",
-        "settings": [],
-        "actions": [
-          {
-            "key": "keepAwake",
-            "type": "toggle",
-            "label": "アプリ起動中はスリープを防ぐ",
-            "hint": "ONにすると、このツールを開いている間だけ2秒間隔でマウスに軽量なコマンドを送り続け、スリープを防ぎます。OFFにするかアプリを終了するとポーリングが停止し、マウスは通常どおりスリープします。マウス本体の設定は一切変更しません。",
-            "command": "keepAwakeToggle"
-          }
-        ]
-      },
-      {
         "title": "DPI設定",
         "settings": [
           {
