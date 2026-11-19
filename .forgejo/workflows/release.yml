@@ -4,14 +4,9 @@ name: Build Windows distribution
 # - push a tag (v*)   → build + create/update that versioned release
 # - manual run        → same as a main push
 #
-# Uses the automatic Forgejo Actions token (secrets.GITHUB_TOKEN) to create
-# the release and upload the assets; no personal token is needed in CI.
-#
-# The job runs on a Docker runner with a pinned Node image and builds the
-# win32-x64 Electron distribution on Linux (the official Electron zip is
-# downloaded via @electron/get). If your runner uses another label, change
-# `runs-on` below. For a Windows runner, also remove the `container:` block
-# and make sure Node.js 22 is installed on the runner.
+# Requires a Forgejo runner registered with the label `linux` in host mode
+# (Node.js 22 installed on the runner host). The automatic Forgejo Actions
+# token is used to create releases, so no personal token is needed in CI.
 
 on:
   push:
@@ -27,13 +22,14 @@ concurrency:
 
 jobs:
   build:
-    runs-on: docker
-    container:
-      image: node:22-bookworm
+    runs-on: linux
     timeout-minutes: 30
     steps:
       - name: Checkout
         uses: actions/checkout@v4
+
+      - name: Show toolchain
+        run: node --version && npm --version && git --version && curl --version | head -n 1
 
       - name: Check tag matches package.json
         if: startsWith(github.ref, 'refs/tags/')

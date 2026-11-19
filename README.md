@@ -92,7 +92,7 @@ npm run dist               # 配布用フォルダ＋ZIP＋SHA256をビルド
 | 手動実行 | main と同じ（リポジトリの Actions → Run workflow） |
 
 - 認証はForgejo Actionsの**自動トークン**（`secrets.GITHUB_TOKEN`）を使用します。個人トークンの登録は不要です
-- 実行には**ランナー**が必要です（リポジトリ設定 → Actions → Runners）。Dockerランナー（`runs-on: docker`）を想定し、`node:22-bookworm` コンテナ内でビルドします。Windowsランナーを使う場合は `runs-on` をランナーのラベルに変更してください
+- 実行には**ランナー**が必要です（リポジトリ設定 → Actions → Runners）。**ホストモード**のランナー（ラベル `linux`、Node.js 22・git・curl 導入済み）を想定しています。Dockerランナーを使う場合は `runs-on` を `docker` に戻し、`container: image: node:22-bookworm` を追加してください
 - バージョン付きリリースを出すときは、先に `package.json` の `version` を更新してから `v1.1.0` のようにタグをpushします（不一致の場合はワークフローが失敗します）
 - 手元から直接発行する場合:
 
