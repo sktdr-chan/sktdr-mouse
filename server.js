@@ -25,6 +25,16 @@ const PORT = Number(process.env.PORT || 3554);
 const HOST = '127.0.0.1';
 const PUBLIC_DIR = path.join(__dirname, 'public');
 
+// Everything below is wrapped in startServer() so the Electron shell can boot
+// the same server in-process (and so tests can spin it up on any port).
+function startServer(port = PORT) {
+const profiles = loadProfiles();
+if (profiles.length === 0) {
+  console.error('[起動エラー] devices/ に有効なデバイスプロファイル (JSON) がありません。');
+  process.exit(1);
+}
+const manager = new DeviceManager(profiles);
+
 // ------------------------------------------------------------------- SSE ---
 
 const sseClients = new Set();
@@ -42,13 +52,6 @@ function broadcast(type, data) {
 }
 
 // --------------------------------------------------------------- manager ---
-
-const profiles = loadProfiles();
-if (profiles.length === 0) {
-  console.error('[起動エラー] devices/ に有効なデバイスプロファイル (JSON) がありません。');
-  process.exit(1);
-}
-const manager = new DeviceManager(profiles);
 
 manager.onEvent((type, data) => {
   switch (type) {
@@ -143,7 +146,7 @@ function serveStatic(res, urlPath) {
   });
 }
 
-const server = http.createServer(async (req, res) => {
+  const server = http.createServer(async (req, res) => {
   const u = new URL(req.url, `http://${req.headers.host || 'localhost'}`);
   try {
     // ------------------------------------------------------------- SSE ---
@@ -291,22 +294,23 @@ const server = http.createServer(async (req, res) => {
 
 server.on('error', (e) => {
   if (e.code === 'EADDRINUSE') {
-    console.error(`ポート ${PORT} が使用中です。既に起動していませんか？ http://localhost:${PORT}`);
-    process.exit(1);
+    console.error(`ポート ${port} が使用中です。既に起動していませんか？ http://localhost:${port}`);
+    if (!process.versions.electron) process.exit(1);
+    return; // Electron: an existing instance/dev server keeps serving the UI
   }
   console.error('server error:', e);
 });
 
-server.listen(PORT, HOST, () => {
+server.listen(port, HOST, () => {
   console.log('===========================================================');
-  console.log('  マウス設定ツール (プロファイル駆動・マルチデバイス)');
+  console.log('  sktdr-mouse (プロファイル駆動・マルチデバイス)');
   console.log(`  対応プロファイル: ${profiles.map((p) => p.meta.name).join(', ')}`);
-  console.log(`  ブラウザで http://localhost:${PORT} を開いてください`);
+  console.log(`  ブラウザで http://localhost:${port} を開いてください`);
   console.log('===========================================================');
   manager.connectAll().catch(() => {});
   manager.startWatcher();
-  if (!process.env.NO_BROWSER) {
-    exec(`start "" "http://localhost:${PORT}"`, () => {});
+  if (!process.env.NO_BROWSER && !process.versions.electron) {
+    exec(`start "" "http://localhost:${port}"`, () => {});
   }
 });
 
@@ -322,3 +326,12 @@ process.on('SIGTERM', async () => {
   }
   process.exit(0);
 });
+
+return { server, manager, port };
+}
+
+if (require.main === module) {
+  startServer();
+}
+
+module.exports = { startServer };

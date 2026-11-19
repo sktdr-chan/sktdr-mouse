@@ -17,7 +17,10 @@ const path = require('path');
 const { makeCodec, num, CodecError } = require('./codec');
 const { parseHexString } = require('./transport');
 
-const DATA_DIR = path.join(__dirname, '..', 'data');
+// Host-side caches (ROCCAT-style devices) live in data/ next to the app in
+// development; the Electron shell points SKTDR_DATA_DIR at the user-data
+// directory so the packaged app never writes inside its (read-only) archive.
+const DATA_DIR = process.env.SKTDR_DATA_DIR || path.join(__dirname, '..', 'data');
 
 function sleep(ms) {
   return new Promise((r) => setTimeout(r, ms));

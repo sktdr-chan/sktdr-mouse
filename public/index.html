@@ -27,19 +27,22 @@
 
 <main id="app">
 
-  <section class="card">
-    <h2 id="deviceInfoTitle">デバイス情報</h2>
-    <div class="kv-grid" id="deviceKv"></div>
-    <div class="row" id="deviceActions"></div>
-    <p class="hint" id="protocolSource"></p>
-  </section>
+  <div id="side">
+    <section class="card">
+      <h2 id="deviceInfoTitle">デバイス情報</h2>
+      <div class="kv-grid" id="deviceKv"></div>
+      <div class="row" id="deviceActions"></div>
+      <p class="hint" id="protocolSource"></p>
+    </section>
+
+    <!-- ログ: デバイス情報の直下に置き、スクロール中も左レールに追従させる -->
+    <section class="card log-card" id="logCard">
+      <h2 id="logTitle">ログ</h2>
+      <ul id="logList" class="log"></ul>
+    </section>
+  </div>
 
   <div id="sections"></div>
-
-  <section class="card">
-    <h2 id="logTitle">ログ</h2>
-    <ul id="logList" class="log"></ul>
-  </section>
 
 </main>
 

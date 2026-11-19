@@ -2,13 +2,41 @@
   "name": "sktdr-mouse",
   "version": "1.0.0",
   "description": "Profile-driven universal mouse configuration tool",
-  "main": "server.js",
+  "author": "sktdr",
+  "license": "MIT",
+  "main": "electron/main.js",
   "scripts": {
     "start": "node server.js",
-    "probe": "node scripts/probe.js"
+    "electron": "electron .",
+    "probe": "node scripts/probe.js",
+    "dist": "electron-builder --win --dir && node scripts/make-folder-build.js"
   },
-  "license": "MIT",
   "dependencies": {
     "node-hid": "^3.4.0"
+  },
+  "devDependencies": {
+    "electron": "^38.0.0",
+    "electron-builder": "^26.0.0"
+  },
+  "build": {
+    "appId": "com.sktdr.mouse",
+    "productName": "sktdr-mouse",
+    "asar": true,
+    "npmRebuild": false,
+    "electronDist": "node_modules/electron/dist",
+    "asarUnpack": [
+      "node_modules/node-hid/**"
+    ],
+    "files": [
+      "server.js",
+      "core/**/*",
+      "devices/**/*",
+      "public/**/*",
+      "electron/**/*",
+      "package.json"
+    ],
+    "win": {
+      "signAndEditExecutable": false
+    }
   }
 }

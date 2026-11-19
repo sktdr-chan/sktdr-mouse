@@ -539,7 +539,14 @@ function addLog(text, isErr = false) {
   li.appendChild(document.createTextNode(text));
   const list = $('#logList');
   list.prepend(li);
+  list.scrollTop = 0; // keep the newest entry in view
   while (list.children.length > 40) list.lastChild.remove();
+  const card = $('#logCard');
+  if (card) {
+    card.classList.add('flash');
+    clearTimeout(addLog.flashTimer);
+    addLog.flashTimer = setTimeout(() => card.classList.remove('flash'), 600);
+  }
 }
 
 function rgbToHex(rgb) {

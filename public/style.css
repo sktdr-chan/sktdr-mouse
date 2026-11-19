@@ -228,20 +228,42 @@ html, body {
 /* ---------- layout ---------- */
 
 #app {
-  max-width: 1380px;
+  max-width: 1480px;
   margin: 18px auto 60px;
   padding: 0 16px;
-  /* floating cards that flow into 2–3 columns when the window is wide,
-     reducing vertical scrolling; narrow windows fall back to one column */
-  columns: 380px;
-  column-gap: 16px;
-}
-#app > * {
-  break-inside: avoid;
-  margin-bottom: 16px;
+  /* left rail (device info + log) and a right area of floating cards.
+     The right area flows into 2 columns when there is room, so the log can
+     stay visible while the settings are scrolled and changed. */
+  display: grid;
+  grid-template-columns: 340px minmax(0, 1fr);
+  gap: 16px;
+  align-items: start;
 }
 #app.disabled { opacity: 0.5; pointer-events: none; }
 #app.busy { pointer-events: none; }
+
+#side {
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+  min-width: 0;
+  /* stretch to the height of the settings area so the sticky log can travel */
+  align-self: stretch;
+}
+
+#sections {
+  min-width: 0;
+  columns: 340px;
+  column-gap: 16px;
+}
+@media (min-width: 1360px) {
+  /* cap at two settings columns even on very wide screens */
+  #sections { columns: 340px 2; }
+}
+#sections > section {
+  break-inside: avoid;
+  margin-bottom: 16px;
+}
 
 .card {
   background: var(--card);
@@ -252,8 +274,15 @@ html, body {
     0 1px 2px rgba(17, 24, 39, 0.05),
     0 10px 28px rgba(17, 24, 39, 0.08);
 }
-@media (min-width: 1100px) {
-  #app { columns: 400px 3; }
+
+/* narrow windows: single column; the log no longer sticks (it would cover
+   the settings directly below it) */
+@media (max-width: 900px) {
+  #app { display: block; }
+  #side { margin-bottom: 16px; }
+  #sections { columns: 340px; }
+  /* higher specificity than the .log-card rule further below */
+  #app .log-card { position: static; top: auto; }
 }
 
 .card h2 {
@@ -541,6 +570,23 @@ input[type="color"] {
 .dpi-row input[type="color"] { margin-left: auto; width: 40px; flex: none; }
 
 /* ---------- log ---------- */
+
+/* The log card sits directly under the device-info card and follows the
+   scroll (sticky) so writes made in the settings below can be verified
+   without scrolling back up. */
+.log-card {
+  position: sticky;
+  top: 74px;
+  z-index: 6;
+  transition: border-color 0.25s ease, box-shadow 0.25s ease;
+}
+/* brief highlight so a log entry written while editing below is noticed */
+.log-card.flash {
+  border-color: rgba(10, 124, 255, 0.65);
+  box-shadow:
+    0 0 0 3px rgba(10, 124, 255, 0.12),
+    0 10px 28px rgba(17, 24, 39, 0.08);
+}
 
 .log {
   list-style: none;

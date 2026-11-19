@@ -17,6 +17,7 @@
 
 ## UIの特徴（マウス管理）
 
+- **デバイス情報とログは左レールに配置** — ログはデバイス情報の直下でスクロールに追従（sticky）するため、下の設定を変更した結果をその場で確認できます
 - **上部には接続中のマウスだけを表示** — 切断・スリープ中は灰色チップ、1分間オンラインに戻らなければ自動で消える
 - **設定画面を開いているマウスは極太の黒枠**で強調、他のオンラインマウスは淡い緑
 - **⚙ 管理メニュー**で全対応機種を一覧表示（接続状態・バッテリー残量）。そこから選択して切り替え、表示言語も変更可能
@@ -48,12 +49,37 @@
 
 ## 使い方
 
+### ブラウザ版（開発向け）
+
 ```powershell
 npm install
 npm start
 ```
 
 起動すると既定のブラウザで `http://localhost:3554` が開きます。終了は `Ctrl+C` です。
+
+### Electron版（フォルダ配布）
+
+ネイティブウィンドウで動く配布版です。**公式Electronバイナリをそのまま同梱**するフォルダ形式で、
+配布用ZIPは約118MBになります。
+
+```powershell
+npm install                # 初回のみ（electron / electron-builder を含む）
+npm run electron           # 開発実行（ウィンドウが開きます）
+npm run dist               # 配布用フォルダ＋ZIPをビルド
+```
+
+- 出力: `dist\sktdr-mouse-1.0.0-win64\`（実行用フォルダ）と `dist\sktdr-mouse-1.0.0-win64.zip`（配布用）
+- 展開して `sktdr-mouse.exe` をダブルクリックするだけで起動します（インストール不要）
+- 起動時に内部サーバー（`http://localhost:3554`）を同一プロセスで立ち上げ、ネイティブウィンドウで表示します
+- 2つ目の起動は既存ウィンドウにフォーカスします（単一インスタンス）
+- ROCCAT用の設定キャッシュは `%APPDATA%\sktdr-mouse\data` に保存されます
+- **同梱される `sktdr-mouse.exe` は公式 `electron.exe` とバイト単位で同一**（ファイル名のみ変更）。そのため Smart App Control 有効環境でもブロックされません（実機検証済み）
+- コード署名はしていないため、SmartScreenの警告が出る場合は「詳細情報」→「実行」を選択してください
+- 依存の `node-hid` は N-API (v4) ビルドのため、Electron向けの再ビルドは不要です（`build.npmRebuild: false`）
+- ビルド時の署名・アイコン書き換えは無効（`win.signAndEditExecutable: false`）です。これはシンボリックリンク作成権限のないWindows環境でも `electron-builder` が失敗しないようにするためで、動作には影響しません
+- フォルダ内のEXEを個別に改変・再署名すると再びSACのブロック対象になります。更新時は**フォルダごと差し替え**てください
+- ライセンス全文（本アプリ・Electron・Chromium・依存ライブラリ）と `licenses\THIRD_PARTY_NOTICES.txt` が自動的に同梱されます
 
 ## 設定できる項目
 
@@ -136,7 +162,9 @@ HANDOFF_PROMPT.md        他言語で再実装するための完全仕様（引�
 
 | コマンド | 説明 |
 | --- | --- |
-| `npm start` | 設定ツールを起動 |
+| `npm start` | 設定ツールを起動（ブラウザ版） |
+| `npm run electron` | 設定ツールをElectronウィンドウで起動（開発用） |
+| `npm run dist` | 配布用フォルダ＋ZIPをビルド |
 | `npm run probe` | デバイス検出・現在設定のダンプ（読み取りのみ） |
 | `node scripts/probe.js --write-test` | 書き込みパスの検証（現在値を書き戻すだけの無害なテスト） |
 
@@ -151,3 +179,15 @@ HANDOFF_PROMPT.md        他言語で再実装するための完全仕様（引�
 
 - 非公式の実装です。設定の書き込みは自己責任でお願いします。
 - 不安な場合はUIの「工場出荷状態に戻す」でいつでも初期化できます。
+
+## ライセンス
+
+- **本アプリ**: MIT（`LICENSE` を参照）
+- **同梱コンポーネント**:
+  - Electron 38 — MIT
+  - Chromium / その他Electron同梱ライブラリ — `LICENSES.chromium.html` に全文収録
+  - node-hid — MIT OR X11（同梱の hidapi は BSD-3-Clause）
+  - pkg-prebuilds / node-addon-api — MIT
+- `npm run dist` は、上記ライセンス全文と `licenses\THIRD_PARTY_NOTICES.txt` を**配布ZIPに自動同梱**します。この著作権表示・許諾文を削除しない限り、再配布・販売・改変はMITの条件内で自由です
+- **Electronの名称・ロゴはElectronプロジェクトの商標**です。本アプリは非公式の独立プロジェクトであり、Electron / OpenJS Foundation / GitHub の承認や提携を示す形での配布・表示は行わないでください
+- 同梱のElectronバイナリは公式配布物そのまま（MIT）で、ファイル名のみ変更しています
