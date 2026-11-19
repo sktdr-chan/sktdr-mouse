@@ -1,9 +1,8 @@
-name: Publish tagged version to GitHub
+name: Publish to GitHub
 
 on:
-  push:
-    tags:
-      - 'v*'
+  release:
+    types: [published]
 
 jobs:
   publish:
@@ -13,12 +12,42 @@ jobs:
         uses: actions/checkout@v4
         with:
           fetch-depth: 0
+          ref: ${{ github.event.release.tag_name }}
 
-      - name: Push tag to GitHub
+      - name: Push source and tag to GitHub
         env:
           GH_TOKEN: ${{ secrets.GH_SKMOUSE_TOKEN }}
         run: |
           git config user.name "forgejo-actions"
           git config user.email "actions@forgejo.local"
           git remote add github https://x-access-token:${GH_TOKEN}@github.com/sktdr-chan/sktdr-mouse.git
-          git push github ${{ github.ref }}
+          git push github HEAD:refs/heads/main
+          git push github ${{ github.event.release.tag_name }}
+
+      - name: Download release assets from Forgejo
+        env:
+          FORGEJO_TOKEN: ${{ secrets.FG_SKMOUSE_TOKEN }}  # または自動トークンを使う
+        run: |
+          TAG="${{ github.event.release.tag_name }}"
+          mkdir -p assets
+          # Forgejo APIからRelease情報を取得してアセットをダウンロード
+          # インスタンスのURLに合わせて調整してください
+          curl -s -H "Authorization: token ${FORGEJO_TOKEN}" \
+            "https://forgejo.pw2.org/api/v1/repos/sktdr/sktdr-mouse/releases/tags/${TAG}" \
+            | jq -r '.assets[].browser_download_url' \
+            | while read url; do
+                filename=$(basename "$url")
+                curl -L -o "assets/${filename}" "$url"
+              done
+
+      - name: Create GitHub Release and upload assets
+        env:
+          GH_TOKEN: ${{ secrets.GH_TOKEN }}
+        run: |
+          TAG="${{ github.event.release.tag_name }}"
+          gh release create "$TAG" \
+            --repo sktdr-chan/sktdr-mouse \
+            --title "$TAG" \
+            --notes "Release from Forgejo" \
+            assets/*
+
