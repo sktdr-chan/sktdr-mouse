@@ -110,22 +110,45 @@ Compx系チップ（VID `0x3554`）は**同じVIDでも複数のプロトコル*
 
 ## 対応環境
 
-- Windows 10 / 11（HIDで直接通信します）
-- Node.js 18以上（開発は Node 24 で確認）
+- **スタンドアロン版（ローカル実行 / Electron）**: Windows 10 / 11（`node-hid` でHID通信）、Node.js 18以上（開発は Node 24+ で確認）
+- **WebHID サーバー版**: サーバー側は Node.js 18以上のみ（`node-hid` 不要、Linux/Windows/macOS どこでも動作）。クライアント側はデスクトップ版 **Chrome / Edge**（WebHID 対応ブラウザ）＋ **HTTPS**（または `http://localhost`）
 - Scyrox V8 のUSBドングル接続（有線 PID `0xF5F6`・通常ドングル PID `0xF5F4` にも対応）
 
 ## 使い方
 
-### ブラウザ版（開発向け）
+### 1. スタンドアロン版（ブラウザ版・従来方式）
 
 ```powershell
 npm install
 npm start
 ```
 
-起動すると既定のブラウザで `http://localhost:3554` が開きます。終了は `Ctrl+C` です。
+起動すると既定のブラウザで `http://localhost:3554` が開き、サーバーを実行したPCに接続されているUSB機器をスキャンします。終了は `Ctrl+C` です。
 
-### Electron版（フォルダ配布）
+### 2. WebHID サーバー版（公開URLから各ユーザーのPCのマウスを設定）
+
+サーバーPCのUSB機器ではなく、**そのURLを開いた閲覧者のブラウザから WebHID 経由で直接マウスを設定**できるモードです。`webhid-server.js` は `node-hid`（ネイティブバイナリ）をロードしないため、Linux サーバー等へそのままデプロイできます。
+
+```powershell
+npm run start:webhid
+# または
+node webhid-server.js --port 3554 --host 0.0.0.0
+# server.js からのモード切替起動にも対応
+node server.js --webhid --port 3554
+```
+
+**HTTPS の要件と起動オプション**:
+- WebHID API はブラウザの仕様上 **セキュアコンテキスト（`https://...` または `http://localhost`）が必須**です。リモート公開時は以下のいずれかで HTTPS 化してください:
+  1. **HTTPS リバースプロキシ配下で実行**（推奨: Nginx / Caddy / Cloudflare 等で TLS 終端し、`node webhid-server.js --host 127.0.0.1 --port 3554` へ転送）
+  2. **サーバー直接 TLS 起動**:
+     ```powershell
+     node webhid-server.js --port 443 --host 0.0.0.0 --cert /path/to/fullchain.pem --key /path/to/privkey.pem
+     ```
+- ブラウザの画面上部に `WebHID` バッジと「🔌 マウスを接続」ボタンが表示され、クリックすると WebHID デバイス選択ピッカーが開きます（一度許可したマウスは次回アクセス時に自動再接続します）。
+- **ROCCAT Kone Pro Air / HyperX Haste Wireless 等の読み戻し非対応項目のキャッシュ**: WebHID モードではサーバーの `data/` ではなく**閲覧者のブラウザ内 `localStorage`** に保存されるため、複数ユーザーが同時にアクセスしても設定が混ざりません。
+- **WebHID での制限事項（Protected Collection）**: ブラウザのセキュリティ制限により、マウス通常コレクション（Usage Page `0x01` 等）上の Feature レポートを使う一部機種（例: **Razer DeathAdder V3 Pro** の有線 `iface 0`）はブラウザ側で `NotAllowedError` となりアクセスがブロックされる場合があります。その場合は上記の**スタンドアロン版 / Electron 版**をご利用ください。
+
+### 3. Electron版（フォルダ配布）
 
 ネイティブウィンドウで動く配布版です。**公式Electronバイナリをそのまま同梱**するフォルダ形式で、
 配布用ZIPは約118MBになります。
@@ -193,13 +216,15 @@ npm run dist               # 配布用フォルダ＋ZIP＋SHA256をビルド
 ## アーキテクチャ — 本体とマウス固有部分の分離
 
 ```
-server.js                HTTP+SSEサーバー (localhost:3554) — マウス非依存・マルチデバイス
+server.js                ローカル実行用 HTTP+SSEサーバー (localhost:3554, node-hid使用) — スタンドアロン版
+webhid-server.js         WebHID配信用 HTTP/HTTPSサーバー (node-hid非依存) — ブラウザ直接接続版
 core/
+  build-info.js          ビルドメタデータ取得（server.js / webhid-server.js 共通）
   profile.js             devices/*.json のロード・検証
-  manager.js             複数デバイスの管理、プロファイル⇔実機マッチング、ホットプラグ
-  transport.js           HID送受信（キュー・再送・チェックサム）— 7形式: hid16 / swarmEcho64 / moji64 / hidpp / razer / ngenuity64 / ngenuityUniversal
-  adapter.js             設定の読み書きエンジン＋シーケンス適用＋MOJI/HID++/Razer/NGenuity2フレーム適用＋ホスト側キャッシュ
-  codec.js               値のコーデック（byte/bool/enum/rgb/dpi/dpiXY/le16/dpiLeXY/stagesMask/bit/dpiBeXY4/oneBased…）
+  manager.js             ローカル版マルチデバイス管理、プロファイル⇔実機マッチング、ホットプラグ
+  transport.js           HID送受信（Node.js / WebHID両対応）— 7形式: hid16 / swarmEcho64 / moji64 / hidpp / razer / ngenuity64 / ngenuityUniversal
+  adapter.js             設定の読み書きエンジン（Node.js / WebHID両対応）＋ホスト側キャッシュ（data/ または localStorage）
+  codec.js               値のコーデック（Node.js / WebHID両対応）
 devices/
   compx-generic.json     Compx系汎用（Scyrox V8/V6・Lamzu Maya・VXE R1 Pro Max等を1ファイルでカバー）
   darmoshark-m5.json     Darmoshark M5（MOJIコマンドフレーム方式）
@@ -210,8 +235,8 @@ devices/
   roccat-kone-pro-air.json  ROCCAT Kone Pro Air（Swarmシーケンス方式）
   vxe-mad-r-major.json   VXE MAD R Major（ページ方式フラッシュ）
 data/
-  <profileId>.json       ホスト側設定キャッシュ（Swarm方式・HyperXの書き込み専用設定など。自動生成）
-public/                  UI — プロファイルのスキーマから画面を自動生成・デバイス切替
+  <profileId>.json       ローカル版ホスト側設定キャッシュ（Swarm方式・HyperXの書き込み専用設定など。自動生成）
+public/                  UI（ローカル版 / WebHID版共通）— webhid.js がブラウザ側WebHIDランタイムを担当
 scripts/
   build-dist.js         配布版（Electronフォルダ＋ZIP＋SHA256）のビルド
   publish-release.js    Forgejo Releaseの作成・アセット添付
@@ -263,8 +288,10 @@ HANDOFF_PROMPT.md        他言語で再実装するための完全仕様（引�
 
 | コマンド | 説明 |
 | --- | --- |
-| `npm start` | 設定ツールを起動（ブラウザ版） |
+| `npm start` | 設定ツールを起動（スタンドアロン・ローカルブラウザ版） |
+| `npm run start:webhid` | WebHID サーバーを起動（閲覧者のブラウザから直接USB HID設定） |
 | `npm run electron` | 設定ツールをElectronウィンドウで起動（開発用） |
+| `npm test` | 自動テストを実行（Node組み込みテストランナー） |
 | `npm run dist` | 配布用フォルダ＋ZIP＋SHA256をビルド |
 | `npm run release -- --tag v1.0.0` | ビルドしてForgejoのReleaseへ添付（`FORGEJO_TOKEN` が必要） |
 | `npm run probe` | デバイス検出・現在設定のダンプ（読み取りのみ） |

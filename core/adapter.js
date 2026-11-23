@@ -1,4 +1,22 @@
-'use strict';
+(function (root, factory) {
+  'use strict';
+  let deps;
+  if (typeof module === 'object' && module.exports) {
+    deps = {
+      ...require('./codec'),
+      ...require('./transport'),
+    };
+  } else {
+    deps = root.SktdrCore || {};
+  }
+  const api = factory(deps);
+  if (typeof module === 'object' && module.exports) {
+    module.exports = api;
+  } else {
+    root.SktdrCore = Object.assign(root.SktdrCore || {}, api);
+  }
+})(typeof globalThis !== 'undefined' ? globalThis : this, function (deps) {
+  'use strict';
 
 // =============================================================================
 // core/adapter.js — profile-driven mouse adapter.
@@ -8,19 +26,63 @@
 //   - values are encoded/decoded via core/codec
 //   - commands (battery, versions, profiles, reset, pairing…) are built
 //     from the profile "commands" table
-// No mouse-specific code lives here.
+// Works identically in Node.js and browsers (WebHID). No mouse-specific code
+// lives here.
 // =============================================================================
 
-const crypto = require('crypto');
-const fs = require('fs');
-const path = require('path');
-const { makeCodec, num, CodecError } = require('./codec');
-const { parseHexString } = require('./transport');
+const { makeCodec, num, CodecError, parseHexString, randomBytes } = deps;
 
-// Host-side caches (ROCCAT-style devices) live in data/ next to the app in
-// development; the Electron shell points SKTDR_DATA_DIR at the user-data
-// directory so the packaged app never writes inside its (read-only) archive.
-const DATA_DIR = process.env.SKTDR_DATA_DIR || path.join(__dirname, '..', 'data');
+function createDefaultCacheStore() {
+  if (
+    typeof process !== 'undefined' &&
+    process.versions &&
+    process.versions.node &&
+    typeof require === 'function'
+  ) {
+    const fs = require('fs');
+    const path = require('path');
+    const baseDir = typeof __dirname !== 'undefined' ? path.join(__dirname, '..') : process.cwd();
+    const dataDir = process.env.SKTDR_DATA_DIR || path.join(baseDir, 'data');
+    return {
+      load(id) {
+        try {
+          return JSON.parse(fs.readFileSync(path.join(dataDir, `${id}.json`), 'utf8'));
+        } catch (e) {
+          return null;
+        }
+      },
+      save(id, obj) {
+        fs.mkdirSync(dataDir, { recursive: true });
+        fs.writeFileSync(path.join(dataDir, `${id}.json`), JSON.stringify(obj, null, 2) + '\n');
+      },
+    };
+  }
+  if (typeof globalThis !== 'undefined' && globalThis.localStorage) {
+    const prefix = 'sktdr-mouse:cache:';
+    return {
+      load(id) {
+        try {
+          const raw = globalThis.localStorage.getItem(prefix + id);
+          return raw ? JSON.parse(raw) : null;
+        } catch (e) {
+          return null;
+        }
+      },
+      save(id, obj) {
+        globalThis.localStorage.setItem(prefix + id, JSON.stringify(obj));
+      },
+    };
+  }
+  const mem = new Map();
+  return {
+    load(id) {
+      return mem.get(id) || null;
+    },
+    save(id, obj) {
+      mem.set(id, obj);
+    },
+  };
+}
 
 function sleep(ms) {
   return new Promise((r) => setTimeout(r, ms));
@@ -73,10 +135,11 @@ class AdapterError extends Error {
 }
 
 class MouseAdapter {
-  constructor(transport, profile) {
+  constructor(transport, profile, opts = {}) {
     this.tr = transport;
     this.profile = profile;
     this.meta = transport.meta;
+    this.cacheStore = (opts && opts.cacheStore) || createDefaultCacheStore();
 
     this.online = false;
     this.cid = null;
@@ -85,7 +148,7 @@ class MouseAdapter {
     this.mouseVersion = null;
     this.dongleVersion = null;
     this.battery = null;
-    this.image = Buffer.alloc(num((profile.transport.configImage || {}).length, 256), 0);
+    this.image = new Uint8Array(num((profile.transport.configImage || {}).length, 256));
     this.config = {};
     this.commandValues = {}; // command-read settings (profile index, long range…)
     this._monTimer = null;
@@ -94,7 +157,8 @@ class MouseAdapter {
 
     // ROCCAT Swarm-style devices keep their configuration in the mouse and
     // cannot be read back — the adapter maintains a host-side cache instead,
-    // seeded from the profile defaults and persisted to data/<id>.json.
+    // seeded from the profile defaults and persisted to cacheStore
+    // (data/<id>.json in Node.js or localStorage in WebHID).
     // HyperX NGenuity2 is also partly write-only (DPI/polling), so it uses
     // the same cache mechanism.
     if (profile.applySequence || profile.protocol === 'ngenuity2') {
@@ -109,11 +173,10 @@ class MouseAdapter {
       this.nguLastColor = [255, 255, 255];
     }
 
-    if (profile.protocol === 'ngenuity2') {
-      // The mouse emits FF 03 <profile> <cable> … when the DPI/profile button
-      // is pressed; keep the cached active stage in sync.
-      this.tr.onEvent((type, data) => {
-        if (type !== 'ngenuityState' || !data) return;
+    // Forward transport events (physical button notifications, disconnects, logs)
+    // and keep NGenuity2 cached state synchronized with async device events.
+    this.tr.onEvent((type, data) => {
+      if (type === 'ngenuityState' && profile.protocol === 'ngenuity2' && data) {
         if (Number.isInteger(data.profile)) {
           this.cache.activeStage = Math.max(0, Math.min(4, data.profile));
           this._saveCache();
@@ -124,8 +187,21 @@ class MouseAdapter {
           this.battery.charging = data.charging;
           this.emit('battery', this.battery);
         }
-      });
-    }
+        return;
+      }
+      if (type === 'notification') {
+        this.emit('notification', data);
+        return;
+      }
+      if (type === 'disconnect') {
+        this.stopMonitor();
+        this.emit('disconnect', data);
+        return;
+      }
+      if (type === 'log') {
+        this.emit('log', data);
+      }
+    });
 
     // flatten settings/actions for dispatch + prebuild codecs
     this.settingsByKey = {};
@@ -291,7 +367,7 @@ class MouseAdapter {
     if (this.profile.protocol === 'ngenuity2') return this._ngInit();
     // handshake identifies CID/MID/connection type — optional per family
     if (this.profile.commands.handshake) {
-      const rnd = crypto.randomBytes(num((this.profile.commands.handshake || {}).randomDataLength, 4));
+      const rnd = randomBytes(num((this.profile.commands.handshake || {}).randomDataLength, 4));
       const hsData = [...rnd, 0, 0, 0, 0];
       const hs = await this._cmd('handshake', { timeout: 300, retries: 2 }, { data: hsData });
       const hsr = this.profile.commands.handshake.response || {};
@@ -360,7 +436,7 @@ class MouseAdapter {
       let v = res[off];
       if (s.read.codec) {
         const c = this.codec(s.key);
-        if (c) v = c.decode(Buffer.from([v & 0xff]));
+        if (c) v = c.decode(new Uint8Array([v & 0xff]));
       }
       this.commandValues[s.key] = v;
     }
@@ -535,7 +611,7 @@ class MouseAdapter {
         let v = this.cache[s.read.cache];
         if (s.read.codec) {
           const c = this.codec(s.key);
-          v = c ? c.decode(Buffer.from([num(v, 0)])) : v;
+          v = c ? c.decode(new Uint8Array([num(v, 0)])) : v;
         }
         cfg[s.key] = v;
         return;
@@ -933,7 +1009,7 @@ class MouseAdapter {
   // are acknowledged by echoing the command; DPI and polling have no read
   // command, so their values live in the host cache like ROCCAT profiles.
   async _ngSend(cmd, payload = [], opts = {}) {
-    const p = Buffer.alloc(num(this.tr.packetLength, 64), 0);
+    const p = new Uint8Array(num(this.tr.packetLength, 64));
     p[0] = cmd & 0xff;
     for (let i = 0; i < payload.length && i + 1 < p.length; i++) {
       p[1 + i] = payload[i] & 0xff;
@@ -1090,7 +1166,7 @@ class MouseAdapter {
   // Unlike NGenuity2, DPI/polling/LOD/brightness/lighting are all readable.
   async _nguSend(cmd, sub, payload = [], opts = {}) {
     const { expectReply = false, timeout = 700, retries = 2 } = opts;
-    const p = Buffer.alloc(num(this.tr.packetLength, 64), 0);
+    const p = new Uint8Array(num(this.tr.packetLength, 64));
     p[0] = cmd & 0xff;
     p[1] = sub & 0x3f;
     for (let i = 0; i < payload.length && i + 2 < p.length; i++) {
@@ -1394,7 +1470,7 @@ class MouseAdapter {
     ];
     for (const p of payloads) {
       const bytes = Array.isArray(p) ? p : parseHexString(p);
-      const pkt = Buffer.alloc(this.tr.packetLength, 0);
+      const pkt = new Uint8Array(this.tr.packetLength);
       for (let i = 0; i < Math.min(bytes.length, pkt.length); i++) pkt[i] = bytes[i] & 0xff;
       const res = await this.tr.command(pkt, { timeout: 400, retries: 3 });
       this._requireOk(res, '設定の書き込み');
@@ -1403,23 +1479,22 @@ class MouseAdapter {
   }
 
   // -------------------------------------------------------- host cache ----
-  _cachePath() {
-    return path.join(DATA_DIR, `${this.profile.id}.json`);
-  }
-
   _loadCache() {
     const defaults =
       (this.profile.applySequence && this.profile.applySequence.defaults) ||
       this.profile.defaults ||
       {};
     try {
-      const raw = JSON.parse(fs.readFileSync(this._cachePath(), 'utf8'));
-      return { ...defaults, ...raw };
+      const raw = this.cacheStore && this.cacheStore.load(this.profile.id);
+      if (raw && typeof raw === 'object') {
+        return { ...defaults, ...raw };
+      }
     } catch (e) {
-      const cache = { ...defaults };
-      this._saveCacheTo(cache);
-      return cache;
+      /* ignore load failure and seed defaults */
     }
+    const cache = { ...defaults };
+    this._saveCacheTo(cache);
+    return cache;
   }
 
   _saveCache() {
@@ -1428,8 +1503,7 @@ class MouseAdapter {
 
   _saveCacheTo(cache) {
     try {
-      fs.mkdirSync(DATA_DIR, { recursive: true });
-      fs.writeFileSync(this._cachePath(), JSON.stringify(cache, null, 2) + '\n');
+      if (this.cacheStore) this.cacheStore.save(this.profile.id, cache);
     } catch (e) {
       this.emit('log', { level: 'warn', message: `キャッシュの保存に失敗: ${e.message}` });
     }
@@ -1449,7 +1523,7 @@ class MouseAdapter {
     const enc = c.encode(args.value);
     const blockAddr = num(s.block.address);
     const blockLen = num(s.block.length);
-    const block = Buffer.from(this.image.slice(blockAddr, blockAddr + blockLen));
+    const block = new Uint8Array(this.image.slice(blockAddr, blockAddr + blockLen));
     const wo = num(f.writeOffset, num(f.read.offset));
     for (let i = 0; i < enc.length; i++) block[wo + i] = enc[i] & 0xff;
     await this._writeBytes(blockAddr, [...block]);
@@ -1717,8 +1791,9 @@ class MouseAdapter {
 
   gracefulClose() {
     this.stopMonitor();
-    this.tr.gracefulClose();
+    return this.tr.gracefulClose();
   }
 }
 
-module.exports = { MouseAdapter, AdapterError };
+  return { MouseAdapter, AdapterError, createDefaultCacheStore };
+});

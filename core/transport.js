@@ -1,20 +1,109 @@
-'use strict';
+(function (root, factory) {
+  'use strict';
+  const codec =
+    typeof module === 'object' && module.exports ? require('./codec') : root.SktdrCore || {};
+  const api = factory(codec);
+  if (typeof module === 'object' && module.exports) {
+    module.exports = api;
+  } else {
+    root.SktdrCore = Object.assign(root.SktdrCore || {}, api);
+  }
+})(typeof globalThis !== 'undefined' ? globalThis : this, function (codec) {
+  'use strict';
 
 // =============================================================================
 // core/transport.js — generic HID transport, fully parameterized by the
 // device profile's "transport" section (report id, packet layout, checksum,
 // write modes, unsolicited notifications).
 //
-// Everything below is protocol-agnostic: the Scyrox specifics (report ID 8,
-// 16-byte packets, checksum 0x55-…) live in devices/*.json only.
+// Works in both Node.js (via node-hid / NodeHidChannel) and browsers (via
+// WebHID / WebHidChannel). Everything below is protocol-agnostic: the device
+// specifics live in devices/*.json only.
 // =============================================================================
 
-const HID = require('node-hid');
-const crypto = require('crypto');
-const { num } = require('./codec');
+const { num } = codec;
 
 function sleep(ms) {
   return new Promise((r) => setTimeout(r, ms));
+}
+
+function allocBytes(n) {
+  return new Uint8Array(Math.max(0, n | 0));
+}
+
+function toBytes(data) {
+  if (!data) return new Uint8Array(0);
+  if (data instanceof Uint8Array) return data;
+  if (typeof ArrayBuffer !== 'undefined') {
+    if (ArrayBuffer.isView(data)) {
+      return new Uint8Array(data.buffer, data.byteOffset, data.byteLength);
+    }
+    if (data instanceof ArrayBuffer) {
+      return new Uint8Array(data);
+    }
+  }
+  if (Array.isArray(data)) return Uint8Array.from(data);
+  return Uint8Array.from(data);
+}
+
+function concatBytes(...parts) {
+  const arrays = parts.map(toBytes);
+  let total = 0;
+  for (const a of arrays) total += a.length;
+  const out = new Uint8Array(total);
+  let off = 0;
+  for (const a of arrays) {
+    out.set(a, off);
+    off += a.length;
+  }
+  return out;
+}
+
+function toHex(data) {
+  const bytes = toBytes(data);
+  let s = '';
+  for (let i = 0; i < bytes.length; i++) {
+    s += bytes[i].toString(16).padStart(2, '0');
+  }
+  return s;
+}
+
+function nextMicrotask(fn) {
+  if (typeof queueMicrotask === 'function') {
+    queueMicrotask(fn);
+  } else {
+    Promise.resolve().then(fn);
+  }
+}
+
+function nextTickRead(fn) {
+  if (typeof setImmediate === 'function') {
+    setImmediate(fn);
+  } else {
+    setTimeout(fn, 0);
+  }
+}
+
+function randomBytes(n) {
+  const len = Math.max(0, n | 0);
+  if (typeof globalThis !== 'undefined' && globalThis.crypto && typeof globalThis.crypto.getRandomValues === 'function') {
+    const out = new Uint8Array(len);
+    globalThis.crypto.getRandomValues(out);
+    return out;
+  }
+  if (typeof require === 'function') {
+    return toBytes(require('crypto').randomBytes(len));
+  }
+  const out = new Uint8Array(len);
+  for (let i = 0; i < len; i++) out[i] = (Math.random() * 256) & 0xff;
+  return out;
+}
+
+function getNodeHid() {
+  if (typeof require !== 'function') {
+    throw new TransportError('node-hid は Node.js 環境でのみ利用できます', 'unsupported-env');
+  }
+  return require('node-hid');
 }
 
 /** Parse a hex byte string ("10 50 14 00 …") into an array of numbers. */
@@ -35,13 +124,93 @@ class TransportError extends Error {
   }
 }
 
+/**
+ * Channel adapter wrapping a node-hid HID instance to match the abstract
+ * HID channel contract used by Transport:
+ *   - startRead(onData, onDisconnect)
+ *   - sendReport(reportId, payload)
+ *   - sendFeatureReport(reportId, payload)
+ *   - receiveFeatureReport(reportId, bodyLength)
+ *   - close()
+ */
+class NodeHidChannel {
+  constructor(dev) {
+    this.dev = dev;
+    this._closed = false;
+    this._readErrors = 0;
+  }
+
+  startRead(onData, onDisconnect) {
+    const step = () => {
+      if (this._closed || !this.dev) return;
+      try {
+        this.dev.read((err, data) => {
+          if (this._closed) return;
+          if (err || !data || data.length === 0) {
+            this._readErrors += 1;
+            if (this._readErrors >= 5) {
+              if (onDisconnect) onDisconnect(String((err && err.message) || err));
+              return;
+            }
+            setTimeout(step, 120);
+            return;
+          }
+          this._readErrors = 0;
+          onData(toBytes(data));
+          nextTickRead(step);
+        });
+      } catch (e) {
+        this._readErrors += 1;
+        if (this._readErrors >= 5) {
+          if (onDisconnect) onDisconnect(e.message);
+          return;
+        }
+        setTimeout(step, 120);
+      }
+    };
+    step();
+  }
+
+  sendReport(reportId, payload) {
+    const wire = concatBytes([reportId & 0xff], payload);
+    this.dev.write(typeof Buffer !== 'undefined' ? Buffer.from(wire) : Array.from(wire));
+  }
+
+  sendFeatureReport(reportId, payload) {
+    const wire = concatBytes([reportId & 0xff], payload);
+    this.dev.sendFeatureReport(typeof Buffer !== 'undefined' ? Buffer.from(wire) : Array.from(wire));
+  }
+
+  receiveFeatureReport(reportId, bodyLength) {
+    const raw = toBytes(this.dev.getFeatureReport(reportId & 0xff, bodyLength + 1));
+    if (raw.length < bodyLength) return null;
+    if (raw.length >= bodyLength + 1) return raw.slice(1, 1 + bodyLength);
+    return raw.slice(0, bodyLength);
+  }
+
+  close() {
+    if (this._closed) return;
+    this._closed = true;
+    try {
+      this.dev.close();
+    } catch (e) {
+      /* ignore */
+    }
+  }
+}
+
+function isChannel(obj) {
+  return !!(obj && typeof obj.sendReport === 'function' && typeof obj.startRead === 'function');
+}
+
 class Transport {
   /**
-   * @param {HID.HID} dev opened HID device
+   * @param {HID.HID|object} dev opened HID device or HID channel adapter
    * @param {object} meta HID device descriptor (path/product/usagePage…)
    * @param {object} profile validated device profile
    */
   constructor(dev, meta, profile) {
+    this.channel = isChannel(dev) ? dev : new NodeHidChannel(dev);
     this.dev = dev;
     this.meta = meta;
     this.profile = profile;
@@ -54,7 +223,6 @@ class Transport {
     this._inflight = null;
     this._closed = false;
     this._eventFn = null;
-    this._readErrors = 0;
 
     if (this.type === 'swarmEcho64') {
       // ROCCAT Swarm-era transport: unnumbered 64-byte output reports,
@@ -62,7 +230,7 @@ class Transport {
       // (0x03 for 10-xx commands, 0x04 for 90-xx diagnostic commands).
       this.reportId = 0;
       this.packetLength = num(t.packetLength, 64);
-      this.writePrefix = Buffer.from([0x00]); // unnumbered report id byte
+      this.writePrefix = new Uint8Array([0x00]); // unnumbered report id byte
       this.L = null; // no fixed layout
     } else if (this.type === 'hidpp') {
       // Logitech HID++ 2.0: 20-byte long reports on the 0xFF00/usage-2
@@ -88,7 +256,7 @@ class Transport {
       //    dataSize, class, cmd, args[80], crc@88 XOR(2..87), 0x00]
       // Transaction = sendFeatureReport → getFeatureReport; response status
       // 0x02=OK, 0x01=busy-OK, 0x03=failure, 0x04=timeout, 0x05=unsupported.
-      // No interrupt read loop: everything is synchronous request/response.
+      // No interrupt read loop: everything is request/response.
       this.reportId = 0x00;
       this.packetLength = 90;
       this.transactionId = num(t.transactionId, 0x1f);
@@ -125,7 +293,7 @@ class Transport {
       // (sub = error code); the dongle answers even while the mouse sleeps.
       this.reportId = 0;
       this.packetLength = num(t.packetLength, 64);
-      this.writePrefix = Buffer.from([0x00]);
+      this.writePrefix = new Uint8Array([0x00]);
       this.L = { status: num(L.status, 1), checksum: num(L.checksum, 63) };
       const ck = t.checksum || {};
       this.ckBase = num(ck.base, 0xa1);
@@ -170,13 +338,14 @@ class Transport {
   }
 
   // -------------------------------------------------------- discovery ----
-  /** All HID top-level collections that may carry this profile's protocol. */
+  /** All HID top-level collections that may carry this profile's protocol (Node.js). */
   static findCollections(profile) {
     const usb = profile.usb || {};
     const vid = num(usb.vendorId);
     const pids = (usb.productIds || []).map(num);
     const usagePageMin = num(usb.vendorUsagePageMin, 0xff00);
     try {
+      const HID = getNodeHid();
       return HID.devices().filter(
         (d) =>
           d.vendorId === vid &&
@@ -196,14 +365,54 @@ class Transport {
   }
 
   /**
-   * Open the first collection that answers the profile's probe command.
+   * Probe an opened HID channel with the profile's probeCommand (and optional
+   * expectedMid handshake). Destroys the transport if the device doesn't match.
+   * Shared between Node.js (openFirst) and browser (WebHidDeviceManager).
+   */
+  static async probeChannel(channel, meta, profile) {
+    const tr = new Transport(channel, meta, profile);
+    try {
+      const usb = profile.usb || {};
+      const probeName = usb.probeCommand || 'dongleVersion';
+      const res = await tr.commandByName(probeName, { timeout: 250, retries: 1 });
+      const expectedMid = usb.expectedMid != null ? num(usb.expectedMid) : null;
+      if (expectedMid != null) {
+        const rnd = randomBytes(4);
+        const hs = await tr.commandByName(
+          'handshake',
+          { timeout: 300, retries: 1 },
+          { data: [...rnd, 0, 0, 0, 0] }
+        );
+        const mid = hs[10];
+        if (mid !== expectedMid) {
+          try {
+            tr.destroy();
+          } catch (e2) {
+            /* ignore */
+          }
+          return null; // a different model answered — keep looking
+        }
+      }
+      return { transport: tr, probeResponse: res };
+    } catch (e) {
+      try {
+        tr.destroy();
+      } catch (e2) {
+        /* ignore */
+      }
+      if (e && e.code === 'not-allowed') throw e;
+      return null;
+    }
+  }
+
+  /**
+   * Open the first collection that answers the profile's probe command (Node.js).
    * Profiles that specify usb.expectedMid additionally perform the handshake
    * and skip collections whose model ID (MID) doesn't match — e.g. the
    * Scyrox V6 and V8 share VID/PID 3554:F5F6/F5F7 but report MID 2 / MID 1.
-   * That lets two profiles claim the same PIDs and each attach to its own
-   * device when both are plugged in.
    */
   static async openFirst(profile) {
+    const HID = getNodeHid();
     for (const meta of Transport.findCollections(profile)) {
       let dev = null;
       try {
@@ -211,32 +420,8 @@ class Transport {
       } catch (e) {
         continue; // protected (mouse/keyboard collection) or busy
       }
-      const tr = new Transport(dev, meta, profile);
-      try {
-        const probeName = profile.usb.probeCommand || 'dongleVersion';
-        const res = await tr.commandByName(probeName, { timeout: 250, retries: 1 });
-        const expectedMid = profile.usb.expectedMid != null ? num(profile.usb.expectedMid) : null;
-        if (expectedMid != null) {
-          const rnd = crypto.randomBytes(4);
-          const hs = await tr.commandByName('handshake', { timeout: 300, retries: 1 }, { data: [...rnd, 0, 0, 0, 0] });
-          const mid = hs[10];
-          if (mid !== expectedMid) {
-            try {
-              tr.destroy();
-            } catch (e2) {
-              /* ignore */
-            }
-            continue; // a different model answered — keep looking
-          }
-        }
-        return { transport: tr, probeResponse: res };
-      } catch (e) {
-        try {
-          tr.destroy();
-        } catch (e2) {
-          /* ignore */
-        }
-      }
+      const hit = await Transport.probeChannel(new NodeHidChannel(dev), meta, profile).catch(() => null);
+      if (hit) return hit;
     }
     return null;
   }
@@ -255,7 +440,7 @@ class Transport {
   }
 
   buildPacket(cmdId, { addr = 0, len = 0, data = [] } = {}) {
-    const p = Buffer.alloc(this.packetLength, 0);
+    const p = allocBytes(this.packetLength);
     p[this.L.command] = cmdId & 0xff;
     p[this.L.addressHi] = (addr >> 8) & 0xff;
     p[this.L.addressLo] = addr & 0xff;
@@ -271,10 +456,8 @@ class Transport {
     const c = (this.profile.commands || {})[name] || {};
     if (this.type === 'swarmEcho64') {
       // static command template from the profile ("data": "90 0a 00 …")
-      const raw = data.length
-        ? data
-        : parseHexString(c.data || '');
-      const p = Buffer.alloc(this.packetLength, 0);
+      const raw = data.length ? data : parseHexString(c.data || '');
+      const p = allocBytes(this.packetLength);
       for (let i = 0; i < Math.min(raw.length, this.packetLength); i++) p[i] = raw[i] & 0xff;
       return p;
     }
@@ -282,7 +465,7 @@ class Transport {
       return this.buildMojiPacket(num(c.id), num(c.opcode), num(c.sub, 0), data);
     }
     if (this.type === 'ngenuityUniversal') {
-      const p = Buffer.alloc(this.packetLength, 0);
+      const p = allocBytes(this.packetLength);
       p[0] = num(c.id);
       p[1] = num(c.sub, 0) & 0x3f;
       const raw = data.length ? data : parseHexString(c.data || '');
@@ -292,7 +475,7 @@ class Transport {
       return p;
     }
     if (this.type === 'ngenuity64') {
-      const p = Buffer.alloc(this.packetLength, 0);
+      const p = allocBytes(this.packetLength);
       p[0] = num(c.id);
       const raw = data.length ? data : parseHexString(c.data || '');
       for (let i = 0; i < Math.min(raw.length, this.packetLength - 1); i++) {
@@ -306,7 +489,7 @@ class Transport {
 
   /** MOJI frame: [type, index, opcode, sub, payload…, checksum@63]. */
   buildMojiPacket(type, opcode, sub, payload = []) {
-    const p = Buffer.alloc(this.packetLength, 0);
+    const p = allocBytes(this.packetLength);
     p[0] = type & 0xff;
     p[2] = opcode & 0xff;
     p[3] = sub & 0xff;
@@ -320,7 +503,7 @@ class Transport {
   // --------------------------------------------------------- razer --------
   /** Razer 90-byte report: [status, trans, remBE, proto, size, class, cmd, args…, crc@88]. */
   buildRazerPacket(cls, cmd, dataSize, args = []) {
-    const r = Buffer.alloc(this.packetLength, 0);
+    const r = allocBytes(this.packetLength);
     r[0] = 0x00; // status
     r[1] = this.transactionId;
     // [2..3] remaining packets (BE) = 0, [4] protocol = 0
@@ -337,12 +520,15 @@ class Transport {
     return r;
   }
 
-  /** One synchronous feature-report transaction; returns the 90-byte body. */
-  razerTransact(packet) {
-    this.dev.sendFeatureReport(Buffer.concat([Buffer.from([0x00]), packet]));
-    const raw = Buffer.from(this.dev.getFeatureReport(0x00, this.packetLength + 1));
-    if (raw.length < this.packetLength) return null;
-    return raw.slice(1, 1 + this.packetLength);
+  /** One feature-report transaction; returns the 90-byte body. */
+  async razerTransact(packet) {
+    const pkt = toBytes(packet);
+    await this.channel.sendFeatureReport(0x00, pkt);
+    const raw = await this.channel.receiveFeatureReport(0x00, this.packetLength);
+    if (!raw) return null;
+    const body = toBytes(raw);
+    if (body.length < this.packetLength) return null;
+    return body.slice(0, this.packetLength);
   }
 
   // --------------------------------------------------------- hidpp --------
@@ -363,7 +549,7 @@ class Transport {
 
   /** HID++ long report: [0x11, devIdx, featureIdx, (fn<<4)|swId, params…]. */
   buildHidppPacket(featureIdx, fn, params = []) {
-    const p = Buffer.alloc(20, 0);
+    const p = allocBytes(20);
     p[0] = this.reportId;
     p[1] = this.deviceIndex;
     p[2] = featureIdx & 0xff;
@@ -386,38 +572,34 @@ class Transport {
     return this.flashWritePacket(addr, [value & 0xff, complement]);
   }
 
+  /** Split a protocol packet into { reportId, payload } for the HID channel. */
+  _packetToReport(packet) {
+    const pkt = toBytes(packet);
+    if (this.type === 'ngenuityUniversal' || this.type === 'hidpp') {
+      return {
+        reportId: pkt.length > 0 ? pkt[0] & 0xff : 0,
+        payload: pkt.slice(1),
+      };
+    }
+    return {
+      reportId: this.reportId & 0xff,
+      payload: pkt,
+    };
+  }
+
   // ---------------------------------------------------------- IO core -----
   _readLoop() {
-    const step = () => {
-      if (this._closed || !this.dev) return;
-      try {
-        this.dev.read((err, data) => {
-          if (this._closed) return;
-          if (err || !data || data.length === 0) {
-            this._readErrors += 1;
-            if (this._readErrors >= 5) {
-              this.emit('disconnect', { reason: String((err && err.message) || err) });
-              this.destroy();
-              return;
-            }
-            setTimeout(step, 120);
-            return;
-          }
-          this._readErrors = 0;
-          this._onPacket(Buffer.from(data));
-          setImmediate(step);
-        });
-      } catch (e) {
-        this._readErrors += 1;
-        if (this._readErrors >= 5) {
-          this.emit('disconnect', { reason: e.message });
-          this.destroy();
-          return;
-        }
-        setTimeout(step, 120);
+    this.channel.startRead(
+      (data) => {
+        if (this._closed) return;
+        this._onPacket(toBytes(data));
+      },
+      (reason) => {
+        if (this._closed) return;
+        this.emit('disconnect', { reason: String(reason || 'disconnected') });
+        this.destroy();
       }
-    };
-    step();
+    );
   }
 
   _onPacket(buf) {
@@ -441,11 +623,11 @@ class Transport {
       return;
     }
     if (this.type === 'hid16' && !this.verifyChecksum(pkt)) {
-      this.emit('log', { level: 'warn', message: `checksum mismatch: ${pkt.toString('hex')}` });
+      this.emit('log', { level: 'warn', message: `checksum mismatch: ${toHex(pkt)}` });
       return;
     }
     if (this.type === 'moji64' && !this.verifyChecksum(pkt)) {
-      this.emit('log', { level: 'warn', message: `checksum mismatch: ${pkt.toString('hex')}` });
+      this.emit('log', { level: 'warn', message: `checksum mismatch: ${toHex(pkt)}` });
       return;
     }
 
@@ -472,7 +654,7 @@ class Transport {
         clearTimeout(inflight.timer);
         this._inflight = null;
         inflight.reject(new TransportError(`デバイスがコマンドを拒否しました (HID++ エラー ${pkt[5]})`, 'hidpp-error'));
-        process.nextTick(() => this._pump());
+        nextMicrotask(() => this._pump());
         return;
       }
     }
@@ -487,7 +669,7 @@ class Transport {
         inflight.reject(
           new TransportError(`デバイスがコマンドを拒否しました (エラーコード ${pkt[3]})`, 'nack')
         );
-        process.nextTick(() => this._pump());
+        nextMicrotask(() => this._pump());
       }
       return;
     }
@@ -511,7 +693,7 @@ class Transport {
       clearTimeout(inflight.timer);
       this._inflight = null;
       inflight.resolve(pkt);
-      process.nextTick(() => this._pump());
+      nextMicrotask(() => this._pump());
     }
     // anything else: unsolicited packet we didn't ask for — ignore
   }
@@ -574,8 +756,9 @@ class Transport {
       return Promise.reject(new TransportError('デバイスは閉じられています', 'closed'));
     }
     if (this.minTimeoutMs && timeout < this.minTimeoutMs) timeout = this.minTimeoutMs;
+    const pkt = toBytes(packet);
     return new Promise((resolve, reject) => {
-      this._queue.push({ packet, timeout, retries, expectReply, attempt: 0, resolve, reject });
+      this._queue.push({ packet: pkt, timeout, retries, expectReply, attempt: 0, resolve, reject });
       this._pump();
     });
   }
@@ -615,65 +798,84 @@ class Transport {
     this._sendInflight();
   }
 
+  _classifyWriteError(e) {
+    const isNotAllowed =
+      e && (e.name === 'NotAllowedError' || e.name === 'SecurityError' || e.code === 'not-allowed');
+    const code = isNotAllowed ? 'not-allowed' : 'write-failed';
+    const msg = isNotAllowed
+      ? 'ブラウザのセキュリティ制限 (Protected Collection) によりこのHID機能へアクセスできません: ' +
+        (e && e.message ? e.message : String(e))
+      : 'HID送信に失敗しました: ' + (e && e.message ? e.message : String(e));
+    return new TransportError(msg, code);
+  }
+
   _sendInflight() {
     const item = this._inflight;
     if (!item) return;
 
     if (this.type === 'razer') {
-      // synchronous feature-report transaction with status validation
-      try {
-        const resp = this.razerTransact(item.packet);
-        item.attempt += 0;
-        if (resp && (resp[0] === 0x02 || resp[0] === 0x01) && resp[6] === item.packet[6] && resp[7] === item.packet[7]) {
+      // feature-report transaction with status validation (sync on node-hid, async on WebHID)
+      Promise.resolve()
+        .then(() => this.razerTransact(item.packet))
+        .then((resp) => {
+          if (this._closed || this._inflight !== item) return;
+          if (
+            resp &&
+            (resp[0] === 0x02 || resp[0] === 0x01) &&
+            resp[6] === item.packet[6] &&
+            resp[7] === item.packet[7]
+          ) {
+            clearTimeout(item.timer);
+            this._inflight = null;
+            item.resolve(resp);
+            nextMicrotask(() => this._pump());
+            return;
+          }
+          const code = resp ? resp[0] : 0xff;
+          if (item.attempt >= item.retries) {
+            clearTimeout(item.timer);
+            this._inflight = null;
+            const msg =
+              code === 0x05
+                ? 'このコマンドはデバイスではサポートされていません'
+                : `デバイスがコマンドを拒否しました (status=${code})`;
+            item.reject(new TransportError(msg, 'razer-error'));
+            nextMicrotask(() => this._pump());
+            return;
+          }
+          item.attempt += 1;
+          setTimeout(() => {
+            if (!this._closed && this._inflight === item) this._sendInflight();
+          }, 25);
+        })
+        .catch((e) => {
+          if (this._closed || this._inflight !== item) return;
           clearTimeout(item.timer);
           this._inflight = null;
-          item.resolve(resp);
-          process.nextTick(() => this._pump());
-          return;
-        }
-        const code = resp ? resp[0] : 0xff;
-        if (item.attempt >= item.retries) {
-          clearTimeout(item.timer);
-          this._inflight = null;
-          const msg =
-            code === 0x05
-              ? 'このコマンドはデバイスではサポートされていません'
-              : `デバイスがコマンドを拒否しました (status=${code})`;
-          item.reject(new TransportError(msg, 'razer-error'));
-          process.nextTick(() => this._pump());
-          return;
-        }
-        item.attempt += 1;
-        setTimeout(() => this._sendInflight(), 25);
-      } catch (e) {
-        this._inflight = null;
-        item.reject(new TransportError('HID送信に失敗しました: ' + e.message, 'write-failed'));
-        process.nextTick(() => this._pump());
-      }
+          item.reject(this._classifyWriteError(e));
+          nextMicrotask(() => this._pump());
+        });
       return;
     }
 
-    let out;
-    if (this.type === 'ngenuityUniversal') {
-      // report ID is already byte 0 of the packet
-      out = item.packet;
-    } else if (this.type === 'hidpp') {
-      // packet already carries its report id (0x11) at byte 0
-      out = item.packet;
-    } else if (this.type === 'swarmEcho64' || this.type === 'moji64') {
-      out = Buffer.concat([this.writePrefix, item.packet]);
-    } else {
-      out = Buffer.from([this.reportId, ...item.packet]);
-    }
-    try {
-      this.dev.write(out);
-    } catch (e) {
+    const { reportId, payload } = this._packetToReport(item.packet);
+    const failWrite = (e) => {
+      if (this._closed || this._inflight !== item) return;
+      clearTimeout(item.timer);
       this._inflight = null;
-      item.reject(new TransportError('HID送信に失敗しました: ' + e.message, 'write-failed'));
-      process.nextTick(() => this._pump());
-      return;
-    }
+      item.reject(this._classifyWriteError(e));
+      nextMicrotask(() => this._pump());
+    };
+
     item.timer = setTimeout(() => this._expire(item), item.timeout);
+    try {
+      const res = this.channel.sendReport(reportId, payload);
+      if (res && typeof res.then === 'function') {
+        res.catch(failWrite);
+      }
+    } catch (e) {
+      failWrite(e);
+    }
   }
 
   _expire(item) {
@@ -682,7 +884,7 @@ class Transport {
     if (item.attempt > item.retries) {
       this._inflight = null;
       item.reject(new TransportError('デバイスから応答がありません', 'timeout'));
-      process.nextTick(() => this._pump());
+      nextMicrotask(() => this._pump());
       return;
     }
     this._sendInflight();
@@ -701,7 +903,8 @@ class Transport {
     for (const item of this._queue) item.reject(err);
     this._queue = [];
     try {
-      this.dev.close();
+      const r = this.channel.close();
+      if (r && typeof r.catch === 'function') r.catch(() => {});
     } catch (e) {
       /* ignore */
     }
@@ -713,11 +916,11 @@ class Transport {
     if (this.profile.commands && this.profile.commands.pcDriverStatus) {
       try {
         const cmd = this.buildByName('pcDriverStatus', { data: [0x00] });
-        this.dev.write(
-          this.type === 'swarmEcho64' || this.type === 'moji64'
-            ? Buffer.concat([this.writePrefix, cmd])
-            : Buffer.from([this.reportId, ...cmd])
-        );
+        const { reportId, payload } = this._packetToReport(cmd);
+        const res = this.channel.sendReport(reportId, payload);
+        if (res && typeof res.then === 'function') {
+          return Promise.race([res.catch(() => {}), sleep(150)]).then(() => this.destroy());
+        }
       } catch (e) {
         /* ignore */
       }
@@ -726,4 +929,5 @@ class Transport {
   }
 }
 
-module.exports = { Transport, TransportError, parseHexString };
+  return { Transport, TransportError, NodeHidChannel, parseHexString, randomBytes, toHex };
+});

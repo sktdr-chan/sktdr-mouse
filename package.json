@@ -7,8 +7,10 @@
   "main": "electron/main.js",
   "scripts": {
     "start": "node server.js",
+    "start:webhid": "node webhid-server.js",
     "electron": "electron .",
     "probe": "node scripts/probe.js",
+    "test": "node --test --test-timeout=15000 tests/*.test.js",
     "dist": "node scripts/build-dist.js",
     "release": "node scripts/build-dist.js && node scripts/publish-release.js"
   },

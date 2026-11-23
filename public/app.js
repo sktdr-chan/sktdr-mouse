@@ -26,13 +26,15 @@ function num(v, fallback = 0) {
 
 /* ------------------------------------------------------------------ state */
 
-let devicesStatus = []; // from /api/status: [{ id, name, connected, online, ... }]
+let devicesStatus = []; // from /api/status or WebHID manager: [{ id, name, connected, online, ... }]
 let activeDevice = null;
 const slots = {}; // deviceId -> { schema, status, config }
 let busy = false;
 let resetArmed = null;
 let builtFor = null; // schema id the settings DOM was built for
 let buildInfo = null; // from /api/build-info
+let serverMode = 'local'; // 'local' | 'webhid'
+let backend = null;
 
 /* ------------------------------------------------------------------ i18n */
 
@@ -103,6 +105,31 @@ const I18N = {
     overDongleTip: 'このドングルでは無効 — 設定は保存され、対応ドングル接続時に有効になります',
     keepAliveOn: 'スリープ防止ON — 2秒間隔でコマンドを送り続けます',
     keepAliveOff: 'スリープ防止OFF — 通常のスリープ動作に戻りました',
+    connectHid: 'マウスを接続',
+    connectHidTip: 'ブラウザのWebHIDピッカーから対応マウスを選んで接続します',
+    reconnectHid: '権限済みデバイスを再スキャン',
+    disconnectHid: '切断',
+    modeLabel: '接続モード',
+    modeLocal: 'ローカル HID (node-hid)',
+    modeWebHid: 'WebHID (ブラウザ直接接続)',
+    webhidNoDevices:
+      'マウスが未接続です。「マウスを接続」を押して使用するマウスを選択してください（Chrome / Edge 対応）。',
+    webhidDeviceNotConnected:
+      '{1} は未接続です。「マウスを接続」から接続するか、接続済みのマウスに切り替えてください。',
+    webhidUnsupported:
+      'このブラウザは WebHID に対応していません。デスクトップ版の Chrome または Edge を使用してください。',
+    webhidInsecure:
+      'WebHID を使用するには HTTPS（または http://localhost）でのアクセスが必要です。現在は非セキュア接続のため動作できません。',
+    webhidConnectedLog: 'WebHID で接続しました: {1}',
+    webhidDisconnectedLog: '切断しました: {1}',
+    webhidCancelled: 'デバイス選択がキャンセルされました',
+    webhidNotAllowed:
+      'ブラウザのセキュリティ制限 (Protected Collection) によりこのデバイスの設定インターフェースを開けませんでした。この機種はスタンドアロン版 (node-hid / Electron) をご利用ください。',
+    webhidNoResponse:
+      '選択されたデバイスから応答がありませんでした。マウスの電源・スリープ解除状態、または対応機種か確認してください。',
+    webhidNoMatch: '選択されたデバイスは対応プロファイルに一致しませんでした。',
+    webhidSecurityErr: 'WebHID 権限ポリシーにより接続が拒否されました。HTTPS 環境を確認してください。',
+    webhidRescanned: '権限済みデバイスを再スキャンしました',
   },
   en: {
     appTitle: 'sktdr-mouse',
@@ -166,6 +193,31 @@ const I18N = {
     overDongleTip: 'Inactive with this dongle — the value is stored and becomes active with a compatible dongle',
     keepAliveOn: 'Keep-awake ON — sending a command every 2 seconds',
     keepAliveOff: 'Keep-awake OFF — normal sleep behavior restored',
+    connectHid: 'Connect Mouse',
+    connectHidTip: 'Select a supported mouse from the browser WebHID picker',
+    reconnectHid: 'Rescan granted devices',
+    disconnectHid: 'Disconnect',
+    modeLabel: 'Connection Mode',
+    modeLocal: 'Local HID (node-hid)',
+    modeWebHid: 'WebHID (Browser Direct)',
+    webhidNoDevices:
+      'No mouse connected. Click "Connect Mouse" to select your mouse via WebHID (Chrome / Edge).',
+    webhidDeviceNotConnected:
+      '{1} is not connected. Click "Connect Mouse" to connect it or switch to a connected mouse.',
+    webhidUnsupported:
+      'This browser does not support WebHID. Please use desktop Chrome or Edge.',
+    webhidInsecure:
+      'WebHID requires a secure context (HTTPS or http://localhost). It cannot run over plain HTTP on a remote host.',
+    webhidConnectedLog: 'Connected via WebHID: {1}',
+    webhidDisconnectedLog: 'Disconnected: {1}',
+    webhidCancelled: 'Device selection was cancelled',
+    webhidNotAllowed:
+      'Browser security rules (Protected Collection) blocked access to this device interface. Please use the standalone edition (node-hid / Electron) for this model.',
+    webhidNoResponse:
+      'The selected device did not respond. Check that the mouse is powered on, awake, and supported.',
+    webhidNoMatch: 'The selected device did not match any supported profile.',
+    webhidSecurityErr: 'WebHID access was blocked by security policy. Verify HTTPS configuration.',
+    webhidRescanned: 'Rescanned granted devices',
   },
   zh: {
     appTitle: 'sktdr-mouse',
@@ -228,6 +280,31 @@ const I18N = {
     overDongleTip: '当前接收器下无效 — 设置已保存，连接支持的接收器后生效',
     keepAliveOn: '防休眠 ON — 每 2 秒发送一次指令',
     keepAliveOff: '防休眠 OFF — 恢复正常休眠行为',
+    connectHid: '连接鼠标',
+    connectHidTip: '通过浏览器的 WebHID 选择器连接支持的鼠标',
+    reconnectHid: '重新扫描已授权设备',
+    disconnectHid: '断开',
+    modeLabel: '连接模式',
+    modeLocal: '本地 HID (node-hid)',
+    modeWebHid: 'WebHID（浏览器直连）',
+    webhidNoDevices:
+      '尚未连接鼠标。请点击“连接鼠标”通过 WebHID 选择您的鼠标（支持 Chrome / Edge）。',
+    webhidDeviceNotConnected:
+      '{1} 未连接。请点击“连接鼠标”连接设备，或切换到已连接的鼠标。',
+    webhidUnsupported:
+      '当前浏览器不支持 WebHID。请使用桌面版 Chrome 或 Edge。',
+    webhidInsecure:
+      'WebHID 需要安全上下文（HTTPS 或 http://localhost），远程明文 HTTP 下无法使用。',
+    webhidConnectedLog: '已通过 WebHID 连接: {1}',
+    webhidDisconnectedLog: '已断开连接: {1}',
+    webhidCancelled: '已取消设备选择',
+    webhidNotAllowed:
+      '由于浏览器安全限制（Protected Collection），无法访问此设备的配置接口。该型号请使用独立桌面版（node-hid / Electron）。',
+    webhidNoResponse:
+      '所选设备无响应。请确认鼠标已开机、已唤醒且属于受支持型号。',
+    webhidNoMatch: '所选设备与任何受支持的配置文件都不匹配。',
+    webhidSecurityErr: 'WebHID 访问被安全策略阻止，请检查 HTTPS 配置。',
+    webhidRescanned: '已重新扫描授权设备',
   },
 };
 
@@ -498,7 +575,11 @@ function applyStaticI18n() {
     disclaimerNote: t('disclaimerShort'),
     langLabel: t('language'),
     buildInfoLabel: t('build'),
+    modeInfoLabel: t('modeLabel'),
     manageBtnLabel: t('manage'),
+    connectHidLabel: t('connectHid'),
+    manageConnectLabel: t('connectHid'),
+    manageReconnectLabel: t('reconnectHid'),
     applyAllBtn: null, // text handled by updateApplyButton()
   };
   for (const [id, text] of Object.entries(map)) {
@@ -508,6 +589,8 @@ function applyStaticI18n() {
   }
   const bat = $('#batteryChip');
   if (bat) bat.title = t('battery');
+  const connectBtn = $('#connectHidBtn');
+  if (connectBtn) connectBtn.title = t('connectHidTip');
   const modeChip = $('#modeChip');
   if (modeChip) modeChip.title = t('applyModeTip');
   const applyBtn = $('#applyAllBtn');
@@ -516,6 +599,28 @@ function applyStaticI18n() {
   const modeToggle = $('#applyModeToggle');
   if (modeLabel && modeToggle) modeLabel.textContent = modeToggle.checked ? t('applyImmediate') : t('applyManual');
   renderBuildInfo();
+  renderModeUi();
+}
+
+function renderModeUi() {
+  const isWebHid = serverMode === 'webhid';
+  const modeBadge = $('#modeBadge');
+  if (modeBadge) modeBadge.hidden = !isWebHid;
+  const connectBtn = $('#connectHidBtn');
+  if (connectBtn) connectBtn.hidden = !isWebHid;
+  const bar = $('#manageWebHidBar');
+  if (bar) bar.classList.toggle('hidden', !isWebHid);
+  const modeVal = $('#modeInfoValue');
+  if (modeVal) modeVal.textContent = isWebHid ? t('modeWebHid') : t('modeLocal');
+  if (isWebHid && backend && typeof backend.supportState === 'function') {
+    const sup = backend.supportState();
+    const canUse = sup.secureContext && sup.webhidSupported;
+    if (connectBtn) connectBtn.disabled = !canUse;
+    const mcBtn = $('#manageConnectBtn');
+    const mrBtn = $('#manageReconnectBtn');
+    if (mcBtn) mcBtn.disabled = !canUse;
+    if (mrBtn) mrBtn.disabled = !canUse;
+  }
 }
 
 /* Build id (commit) shown in the header badge and the manage dialog. */
@@ -524,10 +629,13 @@ async function loadBuildInfo() {
     const r = await fetch('/api/build-info');
     const j = await r.json();
     buildInfo = (j && j.build) || null;
+    serverMode = j && j.mode === 'webhid' ? 'webhid' : 'local';
   } catch (e) {
     buildInfo = null;
+    serverMode = 'local';
   }
   renderBuildInfo();
+  renderModeUi();
 }
 
 function renderBuildInfo() {
@@ -625,31 +733,101 @@ function slot() {
   return slots[activeDevice] || {};
 }
 
+/* ------------------------------------------------------- backend adapters */
+
+function loadScript(src) {
+  return new Promise((resolve, reject) => {
+    const s = document.createElement('script');
+    s.src = src;
+    s.async = false;
+    s.onload = () => resolve();
+    s.onerror = () => reject(new Error(`スクリプトの読み込みに失敗: ${src}`));
+    document.head.appendChild(s);
+  });
+}
+
+function createLocalApiBackend() {
+  let es = null;
+  async function postJson(url, body) {
+    const r = await fetch(url, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(body),
+    });
+    const j = await r.json();
+    if (!j.ok) {
+      throw new Error(j.error || String(r.status));
+    }
+    return j;
+  }
+
+  return {
+    mode: 'local',
+    supportState() {
+      return { secureContext: true, webhidSupported: false };
+    },
+    async init(onEvent) {
+      if (typeof EventSource !== 'undefined') {
+        es = new EventSource('/api/events');
+        es.onmessage = (ev) => {
+          let msg;
+          try {
+            msg = JSON.parse(ev.data);
+          } catch (e) {
+            return;
+          }
+          if (msg && typeof onEvent === 'function') {
+            onEvent(msg.type, msg.data);
+          }
+        };
+      }
+    },
+    async getStatus() {
+      const r = await fetch('/api/status');
+      const j = await r.json();
+      return j.devices || [];
+    },
+    async getSchema(deviceId) {
+      const r = await fetch(`/api/schema?device=${encodeURIComponent(deviceId)}`);
+      const j = await r.json();
+      return j.ok ? j.schema : null;
+    },
+    async getConfig(deviceId) {
+      const r = await fetch(`/api/config?device=${encodeURIComponent(deviceId)}`);
+      if (!r.ok) throw new Error(String(r.status));
+      const j = await r.json();
+      if (!j.ok) throw new Error(j.error || String(r.status));
+      return j;
+    },
+    applySetting(device, setting, args) {
+      return postJson('/api/apply', { device, setting, args });
+    },
+    applyAction(device, action, args) {
+      return postJson('/api/action', { device, action, args });
+    },
+    refreshConfig(device) {
+      return postJson('/api/refresh', { device });
+    },
+  };
+}
+
 /* --------------------------------------------------------------- API glue */
 
 async function applySetting(setting, args) {
-  if (busy) return;
+  if (busy || !backend) return;
   setBusy(true);
   try {
-    const r = await fetch('/api/apply', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ device: activeDevice, setting, args }),
-    });
-    const j = await r.json();
-    if (j.ok) {
-      if (j.config) slot().config = j.config;
-      if (j.devices) updateDevices(j.devices);
-      render();
-      toast(t('saved'));
-      addLog(`✔ ${setting} ${JSON.stringify(args)}`);
-    } else {
-      toast(t('errorPrefix', j.error || r.status), 'error');
-      addLog(`✖ ${setting}: ${j.error || 'failed'}`, true);
-      refreshFromDevice();
-    }
+    const j = await backend.applySetting(activeDevice, setting, args);
+    if (j.config) slot().config = j.config;
+    if (j.devices) updateDevices(j.devices);
+    render();
+    toast(t('saved'));
+    addLog(`✔ ${setting} ${JSON.stringify(args)}`);
   } catch (e) {
-    toast(t('commError', e.message), 'error');
+    const msg = e && e.message ? e.message : String(e);
+    toast(t('errorPrefix', msg), 'error');
+    addLog(`✖ ${setting}: ${msg}`, true);
+    refreshFromDevice();
   } finally {
     setBusy(false);
   }
@@ -695,31 +873,22 @@ function commitSetting(key, args, els = []) {
 }
 
 async function applyPending() {
-  if (busy || !pendingMap.size) return;
+  if (busy || !pendingMap.size || !backend) return;
   setBusy(true);
   let failed = 0;
   for (const [sig, e] of [...pendingMap]) {
     try {
-      const r = await fetch('/api/apply', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ device: activeDevice, setting: e.key, args: e.args }),
-      });
-      const j = await r.json();
-      if (j.ok) {
-        pendingMap.delete(sig);
-        for (const el of e.els) if (el && el.classList) el.classList.remove('pending');
-        if (j.config) slot().config = j.config;
-        if (j.devices) updateDevices(j.devices);
-        addLog(`✔ ${e.key} ${JSON.stringify(e.args)}`);
-      } else {
-        failed += 1;
-        toast(t('errorPrefix', j.error || r.status), 'error');
-        addLog(`✖ ${e.key}: ${j.error || 'failed'}`, true);
-      }
+      const j = await backend.applySetting(activeDevice, e.key, e.args);
+      pendingMap.delete(sig);
+      for (const el of e.els) if (el && el.classList) el.classList.remove('pending');
+      if (j.config) slot().config = j.config;
+      if (j.devices) updateDevices(j.devices);
+      addLog(`✔ ${e.key} ${JSON.stringify(e.args)}`);
     } catch (err) {
       failed += 1;
-      toast(t('commError', err.message), 'error');
+      const msg = err && err.message ? err.message : String(err);
+      toast(t('errorPrefix', msg), 'error');
+      addLog(`✖ ${e.key}: ${msg}`, true);
     }
   }
   setBusy(false);
@@ -729,63 +898,47 @@ async function applyPending() {
 }
 
 async function applyAction(action, args) {
-  if (busy) return;
+  if (busy || !backend) return;
   setBusy(true);
   try {
-    const r = await fetch('/api/action', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ device: activeDevice, action, args }),
-    });
-    const j = await r.json();
-    if (j.ok) {
-      const def = findAction(action);
-      if (def && def.successMessage) toast(trLabel(def.successMessage), 'info');
-      else toast(t('executed'), 'info');
-      addLog(`⚙ ${t('actionRun', action)}`);
-      if (j.devices) updateDevices(j.devices);
-      refreshFromDevice();
-    } else {
-      toast(t('errorPrefix', j.error || r.status), 'error');
-      addLog(`✖ ${action}: ${j.error || 'failed'}`, true);
-    }
+    const j = await backend.applyAction(activeDevice, action, args);
+    const def = findAction(action);
+    if (def && def.successMessage) toast(trLabel(def.successMessage), 'info');
+    else toast(t('executed'), 'info');
+    addLog(`⚙ ${t('actionRun', action)}`);
+    if (j.devices) updateDevices(j.devices);
+    refreshFromDevice();
   } catch (e) {
-    toast(t('commError', e.message), 'error');
+    const msg = e && e.message ? e.message : String(e);
+    toast(t('errorPrefix', msg), 'error');
+    addLog(`✖ ${action}: ${msg}`, true);
   } finally {
     setBusy(false);
   }
 }
 
 async function refreshFromDevice() {
+  if (!backend || !activeDevice) return false;
   try {
-    const r = await fetch('/api/refresh', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ device: activeDevice }),
-    });
-    const j = await r.json();
-    if (j.ok) {
-      clearPending(); // the device state wins over un-applied edits
-      slot().config = j.config;
-      if (j.devices) updateDevices(j.devices);
-      render();
-      return true;
-    }
-    toast(t('readFailed', j.error || r.status), 'error');
-    return false;
+    const j = await backend.refreshConfig(activeDevice);
+    clearPending(); // the device state wins over un-applied edits
+    slot().config = j.config;
+    if (j.devices) updateDevices(j.devices);
+    render();
+    return true;
   } catch (e) {
-    toast(t('commError', e.message), 'error');
+    toast(t('readFailed', e && e.message ? e.message : String(e)), 'error');
     return false;
   }
 }
 
 async function loadSchema(deviceId) {
+  if (!backend) return;
   try {
-    const r = await fetch(`/api/schema?device=${encodeURIComponent(deviceId)}`);
-    const j = await r.json();
-    if (j.ok && j.schema) {
+    const schema = await backend.getSchema(deviceId);
+    if (schema) {
       if (!slots[deviceId]) slots[deviceId] = {};
-      slots[deviceId].schema = j.schema;
+      slots[deviceId].schema = schema;
       if (deviceId === activeDevice) render();
     }
   } catch (e) {
@@ -794,19 +947,86 @@ async function loadSchema(deviceId) {
 }
 
 async function loadConfig(deviceId) {
+  if (!backend) return;
+  const st = slots[deviceId] && slots[deviceId].status;
+  if (st && !st.connected) return;
   try {
-    const r = await fetch(`/api/config?device=${encodeURIComponent(deviceId)}`);
-    if (r.ok) {
-      const j = await r.json();
-      if (j.ok) {
-        if (!slots[deviceId]) slots[deviceId] = {};
-        slots[deviceId].config = j.config;
-        if (deviceId === activeDevice) render();
-      }
+    const j = await backend.getConfig(deviceId);
+    if (j && j.config) {
+      if (!slots[deviceId]) slots[deviceId] = {};
+      slots[deviceId].config = j.config;
+      if (deviceId === activeDevice) render();
     }
   } catch (e) {
-    /* SSE will deliver config when ready */
+    /* SSE / event listener will deliver config when ready */
   }
+}
+
+async function connectViaWebHid(profileId = null) {
+  if (!backend || typeof backend.requestDevice !== 'function') return;
+  const res = await backend.requestDevice(profileId);
+  if (res && res.ok) {
+    const connected = res.connected || [];
+    for (const id of connected) {
+      addLog(t('webhidConnectedLog', id));
+    }
+    const targetId =
+      connected[0] &&
+      (profileId || !activeDevice || !(slot().status && slot().status.connected))
+        ? connected[0]
+        : null;
+    if (targetId && targetId !== activeDevice) {
+      clearPending();
+      activeDevice = targetId;
+      await loadSchema(targetId);
+      await loadConfig(targetId);
+    }
+    const dlg = $('#manageDialog');
+    if (dlg && dlg.open) dlg.close();
+    render();
+    return res;
+  }
+
+  const reason = res && res.reason;
+  if (reason === 'cancelled') {
+    addLog(t('webhidCancelled'));
+  } else if (reason === 'not-allowed') {
+    toast(t('webhidNotAllowed'), 'error');
+    addLog(t('webhidNotAllowed'), true);
+  } else if (reason === 'no-match') {
+    toast(t('webhidNoMatch'), 'error');
+    addLog(t('webhidNoMatch'), true);
+  } else if (reason === 'security-error') {
+    toast(t('webhidSecurityErr'), 'error');
+    addLog(t('webhidSecurityErr'), true);
+  } else if (reason === 'unsupported') {
+    toast(t('webhidUnsupported'), 'error');
+  } else {
+    toast(t('webhidNoResponse'), 'error');
+    addLog(t('webhidNoResponse'), true);
+  }
+  return res;
+}
+
+async function disconnectViaWebHid(deviceId) {
+  if (!backend || typeof backend.disconnectDevice !== 'function') return;
+  const ok = await backend.disconnectDevice(deviceId);
+  if (ok) {
+    if (slots[deviceId]) delete slots[deviceId].config;
+    addLog(t('webhidDisconnectedLog', deviceId));
+    render();
+    const dlg = $('#manageDialog');
+    if (dlg && dlg.open) renderManageList();
+  }
+}
+
+async function reconnectViaWebHid() {
+  if (!backend || typeof backend.reconnectGranted !== 'function') return;
+  await backend.reconnectGranted();
+  toast(t('webhidRescanned'), 'info');
+  render();
+  const dlg = $('#manageDialog');
+  if (dlg && dlg.open) renderManageList();
 }
 
 function findSetting(key) {
@@ -1343,6 +1563,20 @@ function renderDeviceChips() {
   }
 }
 
+function showBanner(message, { kind = 'warn', actionLabel = null, onAction = null } = {}) {
+  const banner = $('#banner');
+  banner.innerHTML = '';
+  banner.className = 'banner' + (kind === 'info' ? ' info' : kind === 'error' ? ' error' : '');
+  banner.appendChild(document.createTextNode(message));
+  if (actionLabel && typeof onAction === 'function') {
+    const btn = document.createElement('button');
+    btn.className = 'btn small banner-action';
+    btn.textContent = actionLabel;
+    btn.addEventListener('click', onAction);
+    banner.appendChild(btn);
+  }
+}
+
 function renderStatus() {
   const s = slot();
   const conn = $('#connChip');
@@ -1352,29 +1586,58 @@ function renderStatus() {
 
   renderDeviceChips();
 
+  const sup =
+    serverMode === 'webhid' && backend && typeof backend.supportState === 'function'
+      ? backend.supportState()
+      : { secureContext: true, webhidSupported: true };
+
+  if (serverMode === 'webhid' && (!sup.secureContext || !sup.webhidSupported)) {
+    setChip(conn, t('notConnected'), 'chip-off');
+    setChip(bat, '🔋 --%', 'chip-off');
+    app.classList.add('disabled');
+    showBanner(!sup.secureContext ? t('webhidInsecure') : t('webhidUnsupported'), { kind: 'error' });
+    return;
+  }
+
   if (!devicesStatus.length || !activeDevice) {
     setChip(conn, t('notConnected'), 'chip-off');
+    setChip(bat, '🔋 --%', 'chip-off');
     app.classList.add('disabled');
-    banner.classList.remove('hidden', 'info');
-    banner.textContent = t('noDevices');
+    if (serverMode === 'webhid') {
+      showBanner(t('webhidNoDevices'), {
+        kind: 'info',
+        actionLabel: '🔌 ' + t('connectHid'),
+        onAction: () => connectViaWebHid(null),
+      });
+    } else {
+      showBanner(t('noDevices'));
+    }
     return;
   }
 
   const st = s.status || {};
   if (!st.connected) {
     setChip(conn, t('notConnected'), 'chip-off');
+    setChip(bat, '🔋 --%', 'chip-off');
     app.classList.add('disabled');
-    banner.classList.remove('hidden', 'info');
-    banner.textContent = t('deviceNotConnected', s.schema ? s.schema.meta.name : activeDevice);
+    if (serverMode === 'webhid') {
+      const anyConnected = devicesStatus.some((d) => d.connected);
+      const name = s.schema ? s.schema.meta.name : activeDevice;
+      showBanner(anyConnected ? t('webhidDeviceNotConnected', name) : t('webhidNoDevices'), {
+        kind: 'info',
+        actionLabel: '🔌 ' + t('connectHid'),
+        onAction: () => connectViaWebHid(anyConnected ? activeDevice : null),
+      });
+    } else {
+      showBanner(t('deviceNotConnected', s.schema ? s.schema.meta.name : activeDevice));
+    }
     return;
   }
 
   if (!st.online) {
     setChip(conn, t('sleeping'), 'chip-warn');
     app.classList.add('disabled');
-    banner.classList.remove('hidden', 'info');
-    banner.textContent =
-      t('offlineBanner');
+    showBanner(t('offlineBanner'));
   } else {
     setChip(conn, trLabel(st.connection) || t('connected'), 'chip-ok');
     app.classList.remove('disabled');
@@ -1654,75 +1917,80 @@ function updateDevices(devices) {
     if (!slots[d.id]) slots[d.id] = {};
     slots[d.id].status = { ...(slots[d.id].status || {}), ...d };
   }
+  const activeStatus = activeDevice && slots[activeDevice] ? slots[activeDevice].status : null;
+  const connectedDevice =
+    devicesStatus.find((d) => d.connected && d.online) || devicesStatus.find((d) => d.connected);
   if (!activeDevice) {
-    const first = devicesStatus.find((d) => d.connected) || devicesStatus[0];
+    const first = connectedDevice || devicesStatus[0];
     if (first) {
       activeDevice = first.id;
       loadSchema(first.id);
-      loadConfig(first.id);
+      if (first.connected) loadConfig(first.id);
     }
+  } else if ((!activeStatus || !activeStatus.connected) && connectedDevice) {
+    clearPending();
+    activeDevice = connectedDevice.id;
+    loadSchema(connectedDevice.id);
+    loadConfig(connectedDevice.id);
   }
   render();
 }
 
-/* -------------------------------------------------------------------- SSE */
+/* --------------------------------------------------------- backend events */
 
-function connectEvents() {
-  const es = new EventSource('/api/events');
-  es.onmessage = (ev) => {
-    let msg;
-    try {
-      msg = JSON.parse(ev.data);
-    } catch (e) {
-      return;
+function handleBackendEvent(type, data) {
+  switch (type) {
+    case 'status': {
+      updateDevices(data);
+      break;
     }
-    const { type, data } = msg;
-    switch (type) {
-      case 'status': {
-        updateDevices(data);
-        break;
-      }
-      case 'config': {
-        const { device, data: cfg } = data;
-        if (!slots[device]) slots[device] = {};
-        slots[device].config = cfg;
-        if (device === activeDevice) render();
-        break;
-      }
-      case 'battery': {
-        const { device, data: bat } = data;
-        if (slots[device]) {
-          slots[device].status = { ...(slots[device].status || {}), battery: bat };
-          if (device === activeDevice) renderStatus();
-        }
-        break;
-      }
-      case 'online': {
-        const { device, data: on } = data;
-        if (slots[device]) {
-          slots[device].status = { ...(slots[device].status || {}), online: !!on };
-          render();
-          if (!on && device === activeDevice) addLog(t('mouseOfflineLog'), true);
-        }
-        break;
-      }
-      case 'notification': {
-        const { device } = data;
-        addLog(t('notifChanged', device));
-        break;
-      }
-      case 'waiting': {
-        const device = data && data.device;
-        if (device === activeDevice) {
-          const st = slot().status || {};
-          if (st.connected && !st.online) toast(t('moveMouse'), 'info');
-        }
-        break;
-      }
-      default:
-        break;
+    case 'config': {
+      const { device, data: cfg } = data;
+      if (!slots[device]) slots[device] = {};
+      slots[device].config = cfg;
+      if (device === activeDevice) render();
+      break;
     }
-  };
+    case 'battery': {
+      const { device, data: bat } = data;
+      if (slots[device]) {
+        slots[device].status = { ...(slots[device].status || {}), battery: bat };
+        if (device === activeDevice) renderStatus();
+      }
+      break;
+    }
+    case 'online': {
+      const { device, data: on } = data;
+      if (slots[device]) {
+        slots[device].status = { ...(slots[device].status || {}), online: !!on };
+        render();
+        if (!on && device === activeDevice) addLog(t('mouseOfflineLog'), true);
+      }
+      break;
+    }
+    case 'notification': {
+      const { device } = data;
+      addLog(t('notifChanged', device));
+      break;
+    }
+    case 'waiting': {
+      const device = data && data.device;
+      if (device === activeDevice) {
+        const st = slot().status || {};
+        if (st.connected && !st.online) toast(t('moveMouse'), 'info');
+      }
+      break;
+    }
+    case 'log': {
+      const msg = data && data.data && data.data.message;
+      if (msg) {
+        addLog(`${data.device ? data.device + ': ' : ''}${msg}`, data.data.level === 'warn' || data.data.level === 'error');
+      }
+      break;
+    }
+    default:
+      break;
+  }
 }
 
 /* -------------------------------------------------------------------- init */
@@ -1758,6 +2026,13 @@ function renderManageList() {
   const container = $('#manageList');
   if (!container) return;
   container.innerHTML = '';
+  const isWebHid = serverMode === 'webhid';
+  const sup =
+    isWebHid && backend && typeof backend.supportState === 'function'
+      ? backend.supportState()
+      : { secureContext: true, webhidSupported: true };
+  const canWebHid = sup.secureContext && sup.webhidSupported;
+
   for (const d of devicesStatus) {
     const row = document.createElement('div');
     row.className =
@@ -1785,6 +2060,22 @@ function renderManageList() {
       badge.textContent = t('shown');
       row.appendChild(badge);
     }
+    if (isWebHid) {
+      if (d.connected) {
+        const discBtn = document.createElement('button');
+        discBtn.className = 'btn small';
+        discBtn.textContent = t('disconnectHid');
+        discBtn.addEventListener('click', () => disconnectViaWebHid(d.id));
+        row.appendChild(discBtn);
+      } else {
+        const connBtn = document.createElement('button');
+        connBtn.className = 'btn small';
+        connBtn.textContent = t('connectHid');
+        connBtn.disabled = !canWebHid;
+        connBtn.addEventListener('click', () => connectViaWebHid(d.id));
+        row.appendChild(connBtn);
+      }
+    }
     container.appendChild(row);
   }
   const note = document.createElement('p');
@@ -1809,10 +2100,15 @@ function initManageDialog() {
     langSelect.addEventListener('change', (e) => setLanguage(e.target.value));
   }
   $('#manageBtn').addEventListener('click', () => {
+    renderModeUi();
     renderManageList();
     dlg.showModal();
   });
   $('#manageClose').addEventListener('click', () => dlg.close());
+  const manageConnectBtn = $('#manageConnectBtn');
+  if (manageConnectBtn) manageConnectBtn.addEventListener('click', () => connectViaWebHid(null));
+  const manageReconnectBtn = $('#manageReconnectBtn');
+  if (manageReconnectBtn) manageReconnectBtn.addEventListener('click', () => reconnectViaWebHid());
   dlg.addEventListener('click', (ev) => {
     if (ev.target === dlg) {
       const rect = dlg.getBoundingClientRect();
@@ -1825,6 +2121,8 @@ function initManageDialog() {
 async function init() {
   applyStaticI18n();
   render();
+  const connectHidBtn = $('#connectHidBtn');
+  if (connectHidBtn) connectHidBtn.addEventListener('click', () => connectViaWebHid(null));
   // apply-mode toggle (即時適用 / 保存ボタン) — persisted in localStorage
   const modeToggle = $('#applyModeToggle');
   const modeLabel = $('#applyModeLabel');
@@ -1854,13 +2152,22 @@ async function init() {
   }, 5000);
   try {
     await loadBuildInfo();
-    const r = await fetch('/api/status');
-    const j = await r.json();
-    updateDevices(j.devices || []);
+    if (serverMode === 'webhid') {
+      await loadScript('/core/codec.js');
+      await loadScript('/core/transport.js');
+      await loadScript('/core/adapter.js');
+      await loadScript('/webhid.js');
+      backend = new window.SktdrWebHid.WebHidBackend();
+    } else {
+      backend = createLocalApiBackend();
+    }
+    renderModeUi();
+    await backend.init(handleBackendEvent);
+    const devices = await backend.getStatus();
+    updateDevices(devices);
   } catch (e) {
     toast(t('serverDown'), 'error');
   }
-  connectEvents();
 }
 
 document.addEventListener('DOMContentLoaded', init);

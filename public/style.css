@@ -84,6 +84,21 @@ html, body {
   cursor: default;
 }
 .build-badge[hidden] { display: none; }
+.mode-badge {
+  display: inline-block;
+  margin-left: 6px;
+  padding: 2px 8px;
+  border-radius: 999px;
+  background: var(--accent-soft);
+  border: 1px solid rgba(10, 124, 255, 0.35);
+  color: var(--accent);
+  font-size: 11px;
+  font-weight: 700;
+  letter-spacing: 0.4px;
+  vertical-align: 2px;
+  cursor: default;
+}
+.mode-badge[hidden] { display: none; }
 @media (max-width: 640px) {
   .build-badge { display: none; }
 }
@@ -150,6 +165,18 @@ html, body {
 }
 .chip-btn:hover { background: rgba(10, 124, 255, 0.16); border-color: var(--accent); }
 .chip-btn:active { transform: translateY(1px); box-shadow: none; }
+.chip-btn:disabled { opacity: 0.45; cursor: not-allowed; box-shadow: none; }
+.chip-connect {
+  background: var(--accent);
+  border-color: var(--accent);
+  color: #ffffff;
+}
+.chip-connect:hover:not(:disabled) {
+  background: #0769db;
+  border-color: #0769db;
+  color: #ffffff;
+}
+.chip-connect[hidden] { display: none; }
 
 /* status pills (connection / battery): flat labels, never look clickable */
 .chip-ok   { color: var(--ok); background: rgba(20, 160, 90, 0.10); border-color: rgba(20, 160, 90, 0.28); }
@@ -232,6 +259,13 @@ html, body {
 }
 .manage-row.active { border-color: var(--accent); background: rgba(10, 124, 255, 0.05); }
 .manage-row.inactive { opacity: 0.6; }
+.manage-webhid-bar {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  margin-bottom: 12px;
+}
+.manage-webhid-bar.hidden { display: none; }
 .manage-name { font-weight: 600; flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .manage-status { font-size: 12px; white-space: nowrap; color: var(--text-dim); }
 .manage-status.manage-live { color: var(--ok); }
@@ -252,6 +286,26 @@ html, body {
   color: var(--warn);
   font-size: 14px;
   text-align: center;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 12px;
+  flex-wrap: wrap;
+}
+.banner.error {
+  border-color: rgba(217, 45, 60, 0.35);
+  background: rgba(217, 45, 60, 0.08);
+  color: var(--danger);
+}
+.banner-action {
+  background: var(--accent);
+  border-color: var(--accent);
+  color: #ffffff;
+}
+.banner-action:hover {
+  background: #0769db;
+  border-color: #0769db;
+  color: #ffffff;
 }
 .banner.info {
   border-color: rgba(10, 124, 255, 0.3);

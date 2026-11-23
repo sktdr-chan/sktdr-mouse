@@ -83,7 +83,7 @@ const buildInfoPath = path.join(distDir, 'build-info.json');
 const stagingDir = path.join(distDir, '.staging');
 
 // application files (same set the app needs at runtime)
-const APP_FILES = ['server.js', 'package.json', 'core', 'devices', 'public', 'electron'];
+const APP_FILES = ['server.js', 'webhid-server.js', 'package.json', 'core', 'devices', 'public', 'electron'];
 // production dependencies required at runtime by node-hid
 const APP_MODULES = ['node-hid', 'pkg-prebuilds', 'node-addon-api'];
 

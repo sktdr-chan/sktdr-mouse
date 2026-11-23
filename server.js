@@ -18,48 +18,18 @@
 const http = require('http');
 const fs = require('fs');
 const path = require('path');
-const { exec, execFileSync } = require('child_process');
+const { exec } = require('child_process');
 const { loadProfiles } = require('./core/profile');
-const { DeviceManager } = require('./core/manager');
-const pkg = require('./package.json');
+const { BUILD_INFO } = require('./core/build-info');
 
 const PORT = Number(process.env.PORT || 3554);
 const HOST = '127.0.0.1';
 const PUBLIC_DIR = path.join(__dirname, 'public');
 
-// Build metadata: packaged builds embed build-info.json (written by
-// scripts/build-dist.js); `npm start` falls back to the current git checkout.
-const BUILD_INFO = (() => {
-  try {
-    return JSON.parse(fs.readFileSync(path.join(__dirname, 'build-info.json'), 'utf8'));
-  } catch (e) {
-    /* development */
-  }
-  const info = {
-    version: pkg.version,
-    commit: '',
-    shortCommit: 'dev',
-    label: 'dev',
-    dirty: false,
-    builtAt: null,
-    electron: process.versions.electron || null,
-  };
-  try {
-    const gitOpts = { cwd: __dirname, encoding: 'utf8', stdio: ['ignore', 'pipe', 'ignore'] };
-    info.commit = execFileSync('git', ['rev-parse', 'HEAD'], gitOpts).trim();
-    info.dirty =
-      execFileSync('git', ['status', '--porcelain', '--untracked-files=no'], gitOpts).trim() !== '';
-    info.shortCommit = info.commit.slice(0, 7);
-    info.label = info.dirty ? `${info.shortCommit}-dirty` : info.shortCommit;
-  } catch (e) {
-    /* not a git checkout */
-  }
-  return info;
-})();
-
 // Everything below is wrapped in startServer() so the Electron shell can boot
 // the same server in-process (and so tests can spin it up on any port).
-function startServer(port = PORT) {
+function startServer(port = PORT, options = {}) {
+const { DeviceManager } = require('./core/manager');
 const profiles = loadProfiles();
 if (profiles.length === 0) {
   console.error('[起動エラー] devices/ に有効なデバイスプロファイル (JSON) がありません。');
@@ -211,7 +181,7 @@ function serveStatic(res, urlPath) {
 
     if (req.method === 'GET') {
       if (u.pathname === '/api/build-info') {
-        return sendJSON(res, 200, { ok: true, build: BUILD_INFO });
+        return sendJSON(res, 200, { ok: true, mode: 'local', build: BUILD_INFO });
       }
       if (u.pathname === '/api/status') {
         return sendJSON(res, 200, { ok: true, devices: manager.statusPayload() });
@@ -337,36 +307,62 @@ server.on('error', (e) => {
 });
 
 server.listen(port, HOST, () => {
-  console.log('===========================================================');
-  console.log('  sktdr-mouse (プロファイル駆動・マルチデバイス)');
-  console.log(`  対応プロファイル: ${profiles.map((p) => p.meta.name).join(', ')}`);
-  console.log(`  ブラウザで http://localhost:${port} を開いてください`);
-  console.log('===========================================================');
-  manager.connectAll().catch(() => {});
-  manager.startWatcher();
-  if (!process.env.NO_BROWSER && !process.versions.electron) {
+  if (!options.quiet) {
+    console.log('===========================================================');
+    console.log('  sktdr-mouse (プロファイル駆動・マルチデバイス)');
+    console.log(`  対応プロファイル: ${profiles.map((p) => p.meta.name).join(', ')}`);
+    console.log(`  ブラウザで http://localhost:${port} を開いてください`);
+    console.log('===========================================================');
+  }
+  if (options.autoConnect !== false) {
+    manager.connectAll().catch(() => {});
+    manager.startWatcher();
+  }
+  if (!process.env.NO_BROWSER && !process.versions.electron && !options.quiet) {
     exec(`start "" "http://localhost:${port}"`, () => {});
   }
 });
 
-process.on('SIGINT', async () => {
+const onSignal = async () => {
   for (const a of manager.adapters.values()) {
     a.gracefulClose();
   }
   process.exit(0);
-});
-process.on('SIGTERM', async () => {
-  for (const a of manager.adapters.values()) {
-    a.gracefulClose();
-  }
-  process.exit(0);
-});
+};
+if (options.installSignalHandlers !== false && require.main === module) {
+  process.on('SIGINT', onSignal);
+  process.on('SIGTERM', onSignal);
+}
 
 return { server, manager, port };
 }
 
 if (require.main === module) {
-  startServer();
+  const argv = process.argv.slice(2);
+  const modeIdx = argv.indexOf('--mode');
+  const cliMode = modeIdx !== -1 ? argv[modeIdx + 1] : null;
+  const isWebHid =
+    argv.includes('--webhid') ||
+    argv.includes('--mode=webhid') ||
+    cliMode === 'webhid' ||
+    process.env.SKTDR_MODE === 'webhid';
+  if (isWebHid) {
+    const { startWebHidServer, parseCliArgs, printUsage } = require('./webhid-server');
+    let opts;
+    try {
+      opts = parseCliArgs(argv, process.env);
+    } catch (e) {
+      console.error(`[起動エラー] ${e.message}`);
+      process.exit(1);
+    }
+    if (opts.help) {
+      printUsage();
+      process.exit(0);
+    }
+    startWebHidServer(opts);
+  } else {
+    startServer();
+  }
 }
 
 module.exports = { startServer };

@@ -9,11 +9,12 @@
 <body>
 
 <header class="topbar">
-  <div class="brand"><span id="brandName">sktdr</span><em id="brandModel">-mouse</em><span class="sub" id="brandSub">設定ツール</span><span class="build-badge" id="buildBadge" hidden></span></div>
+  <div class="brand"><span id="brandName">sktdr</span><em id="brandModel">-mouse</em><span class="sub" id="brandSub">設定ツール</span><span class="build-badge" id="buildBadge" hidden></span><span class="mode-badge" id="modeBadge" hidden>WebHID</span></div>
   <div class="chips">
     <span id="deviceChips" class="device-chips"></span>
     <span id="connChip" class="chip chip-off">未接続</span>
     <span id="batteryChip" class="chip chip-off" title="バッテリー">🔋 --%</span>
+    <button id="connectHidBtn" class="chip chip-btn chip-connect" hidden title="WebHIDでマウスを接続">🔌 <span id="connectHidLabel">マウスを接続</span></button>
     <button id="manageBtn" class="chip chip-btn" title="対応するマウスの一覧と管理">⚙ <span id="manageBtnLabel">管理</span></button>
     <label class="chip chip-btn mode-chip" id="modeChip" title="変更の適用方法：即時適用か、保存ボタンでまとめて適用か">
       <input type="checkbox" id="applyModeToggle" checked>
@@ -66,6 +67,14 @@
   <div class="manage-settings">
     <span id="buildInfoLabel">ビルド</span>
     <span id="buildInfoValue" class="build-value">—</span>
+  </div>
+  <div class="manage-settings" id="modeInfoRow">
+    <span id="modeInfoLabel">接続モード</span>
+    <span id="modeInfoValue" class="build-value">—</span>
+  </div>
+  <div class="manage-webhid-bar hidden" id="manageWebHidBar">
+    <button id="manageConnectBtn" class="btn small">🔌 <span id="manageConnectLabel">マウスを接続</span></button>
+    <button id="manageReconnectBtn" class="btn small">↻ <span id="manageReconnectLabel">権限済みデバイスを再スキャン</span></button>
   </div>
   <div id="manageList"></div>
 </dialog>

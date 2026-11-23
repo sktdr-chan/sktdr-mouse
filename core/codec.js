@@ -1,4 +1,13 @@
-'use strict';
+(function (root, factory) {
+  'use strict';
+  const api = factory();
+  if (typeof module === 'object' && module.exports) {
+    module.exports = api;
+  } else {
+    root.SktdrCore = Object.assign(root.SktdrCore || {}, api);
+  }
+})(typeof globalThis !== 'undefined' ? globalThis : this, function () {
+  'use strict';
 
 // =============================================================================
 // core/codec.js — declarative value codecs used by device profiles.
@@ -263,4 +272,5 @@ function makeCodec(spec) {
   }
 }
 
-module.exports = { makeCodec, num, CodecError };
+  return { makeCodec, num, CodecError };
+});
